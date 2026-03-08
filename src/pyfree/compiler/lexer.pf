@@ -1,0 +1,529 @@
+# PyFree Compiler: Lexer
+# 소스 코드를 토큰으로 변환
+
+from types import Token
+
+# ============================================
+# Token Type Constants
+# ============================================
+
+class TokenTypes:
+    # Literals
+    INT = "INT"
+    FLOAT = "FLOAT"
+    STRING = "STRING"
+    BOOL = "BOOL"
+
+    # Keywords
+    IF = "IF"
+    ELIF = "ELIF"
+    ELSE = "ELSE"
+    FOR = "FOR"
+    WHILE = "WHILE"
+    DEF = "DEF"
+    CLASS = "CLASS"
+    RETURN = "RETURN"
+    BREAK = "BREAK"
+    CONTINUE = "CONTINUE"
+    IMPORT = "IMPORT"
+    FROM = "FROM"
+    AS = "AS"
+    PASS = "PASS"
+    TRUE = "TRUE"
+    FALSE = "FALSE"
+    NONE = "NONE"
+    AND = "AND"
+    OR = "OR"
+    NOT = "NOT"
+    IN = "IN"
+    IS = "IS"
+    LAMBDA = "LAMBDA"
+    TRY = "TRY"
+    EXCEPT = "EXCEPT"
+    FINALLY = "FINALLY"
+    RAISE = "RAISE"
+    WITH = "WITH"
+    ASSERT = "ASSERT"
+
+    # Identifiers
+    IDENTIFIER = "IDENTIFIER"
+
+    # Operators
+    PLUS = "PLUS"
+    MINUS = "MINUS"
+    STAR = "STAR"
+    SLASH = "SLASH"
+    PERCENT = "PERCENT"
+    POWER = "POWER"
+    DOUBLESTAR = "DOUBLESTAR"
+    EQ = "EQ"
+    NE = "NE"
+    LT = "LT"
+    LE = "LE"
+    GT = "GT"
+    GE = "GE"
+    ASSIGN = "ASSIGN"
+    PLUSASSIGN = "PLUSASSIGN"
+    MINUSASSIGN = "MINUSASSIGN"
+    STARASSIGN = "STARASSIGN"
+    SLASHASSIGN = "SLASHASSIGN"
+    PERCENTASSIGN = "PERCENTASSIGN"
+    DOUBLESTARSSIGN = "DOUBLESTARASSIGN"
+    AMPERSAND = "AMPERSAND"
+    PIPE = "PIPE"
+    CARET = "CARET"
+    TILDE = "TILDE"
+    LSHIFT = "LSHIFT"
+    RSHIFT = "RSHIFT"
+    ARROW = "ARROW"
+    WALRUS = "WALRUS"
+
+    # Delimiters
+    LPAREN = "LPAREN"
+    RPAREN = "RPAREN"
+    LBRACE = "LBRACE"
+    RBRACE = "RBRACE"
+    LBRACKET = "LBRACKET"
+    RBRACKET = "RBRACKET"
+    COMMA = "COMMA"
+    COLON = "COLON"
+    SEMICOLON = "SEMICOLON"
+    DOT = "DOT"
+    ELLIPSIS = "ELLIPSIS"
+    AT = "AT"
+    QUESTION = "QUESTION"
+
+    # Indentation
+    INDENT = "INDENT"
+    DEDENT = "DEDENT"
+    NEWLINE = "NEWLINE"
+
+    # Special
+    EOF = "EOF"
+
+
+class Lexer:
+    """PyFree 렉서: 소스 코드를 토큰으로 변환"""
+
+    def __init__(self, source: str):
+        self.source = source
+        self.pos = 0
+        self.line = 1
+        self.column = 1
+        self.tokens = []
+        self.indent_stack = [0]
+        self.current_indent = 0
+        self.at_line_start = True
+
+    def tokenize(self) -> list[Token]:
+        """메인 토큰화 함수"""
+        self.tokens = []
+        self.pos = 0
+        self.line = 1
+        self.column = 1
+        self.indent_stack = [0]
+        self.at_line_start = True
+
+        while self.pos < len(self.source):
+            # 줄 시작에서 들여쓰기 처리
+            if self.at_line_start and not self.is_at_line_end():
+                self.handle_indentation()
+
+            if self.pos >= len(self.source):
+                break
+
+            ch = self.current_char()
+
+            # 공백 스킵
+            if ch == ' ' or ch == '\t':
+                self.advance()
+                continue
+
+            # 개행
+            if ch == '\n' or ch == '\r':
+                self.add_token(TokenTypes.NEWLINE, ch)
+                if ch == '\r' and self.peek_char() == '\n':
+                    self.advance()
+                self.advance()
+                self.line = self.line + 1
+                self.column = 1
+                self.at_line_start = True
+                continue
+
+            # 주석
+            if ch == '#':
+                self.skip_comment()
+                continue
+
+            if ch == '/' and self.peek_char() == '/':
+                self.skip_comment()
+                continue
+
+            # 문자열
+            if ch == '"' or ch == "'":
+                self.tokenize_string()
+                self.at_line_start = False
+                continue
+
+            # f-string
+            if ch == 'f' and (self.peek_char() == '"' or self.peek_char() == "'"):
+                self.tokenize_string(True)
+                self.at_line_start = False
+                continue
+
+            # 숫자
+            if self.is_digit(ch):
+                self.scan_number()
+                self.at_line_start = False
+                continue
+
+            # 식별자 또는 키워드
+            if self.is_alpha(ch) or ch == '_':
+                self.scan_identifier()
+                self.at_line_start = False
+                continue
+
+            # 연산자 및 구분자
+            self.scan_operator()
+            self.at_line_start = False
+
+        # DEDENT 처리
+        while len(self.indent_stack) > 1:
+            self.indent_stack.pop()
+            self.add_token(TokenTypes.DEDENT, "")
+
+        self.add_token(TokenTypes.EOF, "")
+        return self.tokens
+
+    def handle_indentation(self) -> None:
+        """들여쓰기 처리 (INDENT/DEDENT)"""
+        indent_level = 0
+
+        while self.pos < len(self.source) and (self.current_char() == ' ' or self.current_char() == '\t'):
+            if self.current_char() == ' ':
+                indent_level = indent_level + 1
+            else:
+                indent_level = indent_level + 4
+            self.advance()
+
+        # 빈 줄이거나 주석이면 들여쓰기 무시
+        if self.pos < len(self.source) and (self.current_char() == '\n' or self.current_char() == '#'):
+            return
+
+        current_indent = indent_level
+
+        if current_indent > self.indent_stack[-1]:
+            self.indent_stack.append(current_indent)
+            self.add_token(TokenTypes.INDENT, "")
+        elif current_indent < self.indent_stack[-1]:
+            while len(self.indent_stack) > 1 and self.indent_stack[-1] > current_indent:
+                self.indent_stack.pop()
+                self.add_token(TokenTypes.DEDENT, "")
+
+    def skip_comment(self) -> None:
+        """주석 스킵"""
+        while self.pos < len(self.source) and self.current_char() != '\n':
+            self.advance()
+
+    def tokenize_string(self, is_fstring: bool = False) -> None:
+        """문자열 토큰화"""
+        quote = self.current_char()
+        self.advance()
+        value = ""
+
+        # 삼중 인용
+        is_triple = False
+        if self.pos + 1 < len(self.source) and self.current_char() == quote and self.peek_char() == quote:
+            is_triple = True
+            self.advance()
+            self.advance()
+
+        while self.pos < len(self.source):
+            ch = self.current_char()
+
+            if is_triple:
+                if ch == quote and self.peek_char() == quote and self.peek_char(2) == quote:
+                    self.advance()
+                    self.advance()
+                    self.advance()
+                    break
+            else:
+                if ch == quote:
+                    self.advance()
+                    break
+
+            if ch == '\\':
+                self.advance()
+                if self.pos < len(self.source):
+                    next_ch = self.current_char()
+                    if next_ch == 'n':
+                        value = value + '\n'
+                    elif next_ch == 't':
+                        value = value + '\t'
+                    elif next_ch == 'r':
+                        value = value + '\r'
+                    elif next_ch == '\\':
+                        value = value + '\\'
+                    elif next_ch == quote:
+                        value = value + quote
+                    else:
+                        value = value + next_ch
+                    self.advance()
+            else:
+                value = value + ch
+                if ch == '\n':
+                    self.line = self.line + 1
+                    self.column = 1
+                else:
+                    self.column = self.column + 1
+                self.advance()
+
+        self.tokens.append(Token(TokenTypes.STRING, value, self.line, self.column))
+
+    def scan_number(self) -> None:
+        """숫자 스캔"""
+        value = ""
+
+        # 0x, 0b 처리
+        if self.current_char() == '0' and self.pos + 1 < len(self.source):
+            next_ch = self.current_char_at(self.pos + 1)
+            if next_ch == 'x' or next_ch == 'X':
+                value = value + self.current_char()
+                self.advance()
+                value = value + self.current_char()
+                self.advance()
+                while self.pos < len(self.source) and self.is_hex_digit(self.current_char()):
+                    value = value + self.current_char()
+                    self.advance()
+                self.tokens.append(Token(TokenTypes.INT, value, self.line, self.column))
+                return
+            elif next_ch == 'b' or next_ch == 'B':
+                value = value + self.current_char()
+                self.advance()
+                value = value + self.current_char()
+                self.advance()
+                while self.pos < len(self.source) and (self.current_char() == '0' or self.current_char() == '1'):
+                    value = value + self.current_char()
+                    self.advance()
+                self.tokens.append(Token(TokenTypes.INT, value, self.line, self.column))
+                return
+
+        # 정수 부분
+        while self.pos < len(self.source) and self.is_digit(self.current_char()):
+            value = value + self.current_char()
+            self.advance()
+
+        # 부동소수점
+        if self.pos < len(self.source) and self.current_char() == '.':
+            if self.pos + 1 < len(self.source) and self.is_digit(self.current_char_at(self.pos + 1)):
+                value = value + self.current_char()
+                self.advance()
+                while self.pos < len(self.source) and self.is_digit(self.current_char()):
+                    value = value + self.current_char()
+                    self.advance()
+                self.tokens.append(Token(TokenTypes.FLOAT, value, self.line, self.column))
+                return
+
+        # 지수 표기
+        if self.pos < len(self.source) and (self.current_char() == 'e' or self.current_char() == 'E'):
+            value = value + self.current_char()
+            self.advance()
+            if self.pos < len(self.source) and (self.current_char() == '+' or self.current_char() == '-'):
+                value = value + self.current_char()
+                self.advance()
+            while self.pos < len(self.source) and self.is_digit(self.current_char()):
+                value = value + self.current_char()
+                self.advance()
+            self.tokens.append(Token(TokenTypes.FLOAT, value, self.line, self.column))
+            return
+
+        self.tokens.append(Token(TokenTypes.INT, value, self.line, self.column))
+
+    def scan_identifier(self) -> None:
+        """식별자 또는 키워드 스캔"""
+        value = ""
+
+        while self.pos < len(self.source) and (self.is_alnum(self.current_char()) or self.current_char() == '_'):
+            value = value + self.current_char()
+            self.advance()
+
+        # 키워드 확인
+        token_type = self.get_keyword_type(value)
+        if token_type is not None:
+            self.tokens.append(Token(token_type, value, self.line, self.column))
+        else:
+            self.tokens.append(Token(TokenTypes.IDENTIFIER, value, self.line, self.column))
+
+    def scan_operator(self) -> None:
+        """연산자 및 구분자 스캔"""
+        ch = self.current_char()
+
+        # 두 글자 연산자
+        if self.pos + 1 < len(self.source):
+            two_char = ch + self.current_char_at(self.pos + 1)
+            token_type = self.get_two_char_op_type(two_char)
+            if token_type is not None:
+                self.add_token(token_type, two_char)
+                self.advance()
+                self.advance()
+                return
+
+        # 한 글자 연산자
+        token_type = self.get_one_char_op_type(ch)
+        if token_type is not None:
+            self.add_token(token_type, ch)
+            self.advance()
+        else:
+            self.advance()
+
+    # ============================================
+    # Helper Functions
+    # ============================================
+
+    def current_char(self) -> str:
+        """현재 문자"""
+        if self.pos < len(self.source):
+            return self.source[self.pos]
+        return ""
+
+    def current_char_at(self, index: int) -> str:
+        """특정 위치의 문자"""
+        if index < len(self.source):
+            return self.source[index]
+        return ""
+
+    def peek_char(self, offset: int = 1) -> str:
+        """미리보기 문자"""
+        index = self.pos + offset
+        if index < len(self.source):
+            return self.source[index]
+        return ""
+
+    def advance(self) -> None:
+        """다음 문자로 이동"""
+        if self.pos < len(self.source):
+            self.pos = self.pos + 1
+            self.column = self.column + 1
+
+    def is_at_line_end(self) -> bool:
+        """줄 끝인지 확인"""
+        i = self.pos
+        while i < len(self.source) and (self.source[i] == ' ' or self.source[i] == '\t'):
+            i = i + 1
+        return i >= len(self.source) or self.source[i] == '\n' or self.source[i] == '#'
+
+    def is_digit(self, ch: str) -> bool:
+        """숫자인지 확인"""
+        return ch >= '0' and ch <= '9'
+
+    def is_hex_digit(self, ch: str) -> bool:
+        """16진 숫자인지 확인"""
+        return (ch >= '0' and ch <= '9') or (ch >= 'a' and ch <= 'f') or (ch >= 'A' and ch <= 'F')
+
+    def is_alpha(self, ch: str) -> bool:
+        """문자인지 확인"""
+        return (ch >= 'a' and ch <= 'z') or (ch >= 'A' and ch <= 'Z')
+
+    def is_alnum(self, ch: str) -> bool:
+        """문자 또는 숫자인지 확인"""
+        return self.is_alpha(ch) or self.is_digit(ch)
+
+    def add_token(self, token_type: str, value: any) -> None:
+        """토큰 추가"""
+        self.tokens.append(Token(token_type, value, self.line, self.column))
+
+    def get_keyword_type(self, word: str) -> str:
+        """키워드 타입 반환"""
+        keywords = {
+            "if": TokenTypes.IF,
+            "elif": TokenTypes.ELIF,
+            "else": TokenTypes.ELSE,
+            "for": TokenTypes.FOR,
+            "while": TokenTypes.WHILE,
+            "def": TokenTypes.DEF,
+            "class": TokenTypes.CLASS,
+            "return": TokenTypes.RETURN,
+            "break": TokenTypes.BREAK,
+            "continue": TokenTypes.CONTINUE,
+            "import": TokenTypes.IMPORT,
+            "from": TokenTypes.FROM,
+            "as": TokenTypes.AS,
+            "pass": TokenTypes.PASS,
+            "True": TokenTypes.TRUE,
+            "False": TokenTypes.FALSE,
+            "None": TokenTypes.NONE,
+            "and": TokenTypes.AND,
+            "or": TokenTypes.OR,
+            "not": TokenTypes.NOT,
+            "in": TokenTypes.IN,
+            "is": TokenTypes.IS,
+            "lambda": TokenTypes.LAMBDA,
+            "try": TokenTypes.TRY,
+            "except": TokenTypes.EXCEPT,
+            "finally": TokenTypes.FINALLY,
+            "raise": TokenTypes.RAISE,
+            "with": TokenTypes.WITH,
+            "assert": TokenTypes.ASSERT,
+        }
+
+        if word in keywords:
+            return keywords[word]
+        return None
+
+    def get_one_char_op_type(self, ch: str) -> str:
+        """한 글자 연산자 타입"""
+        ops = {
+            "+": TokenTypes.PLUS,
+            "-": TokenTypes.MINUS,
+            "*": TokenTypes.STAR,
+            "/": TokenTypes.SLASH,
+            "%": TokenTypes.PERCENT,
+            "=": TokenTypes.ASSIGN,
+            "<": TokenTypes.LT,
+            ">": TokenTypes.GT,
+            "&": TokenTypes.AMPERSAND,
+            "|": TokenTypes.PIPE,
+            "^": TokenTypes.CARET,
+            "~": TokenTypes.TILDE,
+            "(": TokenTypes.LPAREN,
+            ")": TokenTypes.RPAREN,
+            "{": TokenTypes.LBRACE,
+            "}": TokenTypes.RBRACE,
+            "[": TokenTypes.LBRACKET,
+            "]": TokenTypes.RBRACKET,
+            ",": TokenTypes.COMMA,
+            ":": TokenTypes.COLON,
+            ";": TokenTypes.SEMICOLON,
+            ".": TokenTypes.DOT,
+            "@": TokenTypes.AT,
+            "?": TokenTypes.QUESTION,
+        }
+
+        if ch in ops:
+            return ops[ch]
+        return None
+
+    def get_two_char_op_type(self, two_char: str) -> str:
+        """두 글자 연산자 타입"""
+        ops = {
+            "==": TokenTypes.EQ,
+            "!=": TokenTypes.NE,
+            "<=": TokenTypes.LE,
+            ">=": TokenTypes.GE,
+            "+=": TokenTypes.PLUSASSIGN,
+            "-=": TokenTypes.MINUSASSIGN,
+            "*=": TokenTypes.STARASSIGN,
+            "/=": TokenTypes.SLASHASSIGN,
+            "%=": TokenTypes.PERCENTASSIGN,
+            "<<": TokenTypes.LSHIFT,
+            ">>": TokenTypes.RSHIFT,
+            "->": TokenTypes.ARROW,
+            ":=": TokenTypes.WALRUS,
+            "**": TokenTypes.DOUBLESTAR,
+            "//": TokenTypes.SLASH,
+            "..": TokenTypes.DOT,
+        }
+
+        if two_char in ops:
+            return ops[two_char]
+        return None

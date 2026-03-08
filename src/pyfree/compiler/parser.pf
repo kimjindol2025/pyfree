@@ -1,0 +1,548 @@
+# PyFree Compiler: Parser
+# 토큰을 Abstract Syntax Tree(AST)로 변환
+
+from types import (
+    Token, Expression, Statement, ASTNode,
+    IntLiteral, FloatLiteral, StringLiteral, BoolLiteral,
+    ListLiteral, DictLiteral, Identifier,
+    BinaryOp, UnaryOp, CallExpression, IndexExpression,
+    AttributeExpression, AssignmentStatement,
+    FunctionDef, ClassDef, IfStatement,
+    ForStatement, WhileStatement, ReturnStatement,
+    BreakStatement, ContinueStatement, ExpressionStatement
+)
+from lexer import Lexer, TokenTypes
+
+
+class Parser:
+    """PyFree 파서: 토큰을 AST로 변환"""
+
+    def __init__(self, tokens: list[Token]):
+        self.tokens = tokens
+        self.pos = 0
+
+    def parse(self) -> list[Statement]:
+        """메인 파싱 함수"""
+        statements = []
+
+        while not self.is_at_end():
+            # NEWLINE, INDENT, DEDENT 건너뛰기
+            if self.check(TokenTypes.NEWLINE):
+                self.advance()
+                continue
+
+            stmt = self.parse_statement()
+            if stmt is not None:
+                statements.append(stmt)
+
+        return statements
+
+    def parse_statement(self) -> Statement:
+        """문장 파싱"""
+        # 함수 정의
+        if self.check(TokenTypes.DEF):
+            return self.parse_function_def()
+
+        # 클래스 정의
+        if self.check(TokenTypes.CLASS):
+            return self.parse_class_def()
+
+        # if 문
+        if self.check(TokenTypes.IF):
+            return self.parse_if_statement()
+
+        # for 루프
+        if self.check(TokenTypes.FOR):
+            return self.parse_for_loop()
+
+        # while 루프
+        if self.check(TokenTypes.WHILE):
+            return self.parse_while_loop()
+
+        # return
+        if self.check(TokenTypes.RETURN):
+            self.advance()
+            if self.check(TokenTypes.NEWLINE) or self.is_at_end():
+                return ReturnStatement(None, 0, 0)
+            expr = self.parse_expression()
+            self.consume_newline()
+            return ReturnStatement(expr, 0, 0)
+
+        # break
+        if self.check(TokenTypes.BREAK):
+            self.advance()
+            self.consume_newline()
+            return BreakStatement(0, 0)
+
+        # continue
+        if self.check(TokenTypes.CONTINUE):
+            self.advance()
+            self.consume_newline()
+            return ContinueStatement(0, 0)
+
+        # pass
+        if self.check(TokenTypes.PASS):
+            self.advance()
+            self.consume_newline()
+            return ExpressionStatement(None, 0, 0)
+
+        # 표현식 문장
+        expr = self.parse_expression()
+
+        # 할당
+        if self.check(TokenTypes.ASSIGN):
+            self.advance()
+            value = self.parse_expression()
+            self.consume_newline()
+            if isinstance(expr, Identifier):
+                return AssignmentStatement(expr.name, value, 0, 0)
+
+        self.consume_newline()
+        return ExpressionStatement(expr, 0, 0)
+
+    def parse_expression(self, precedence: int = 0) -> Expression:
+        """표현식 파싱 (연산자 우선순위 등반)"""
+        left = self.parse_unary()
+
+        while not self.is_at_end() and self.get_precedence(self.current_token()) > precedence:
+            op_token = self.current_token()
+            op = op_token.value
+            self.advance()
+
+            right = self.parse_expression(self.get_precedence(op_token) + 1)
+            left = BinaryOp(left, op, right, 0, 0)
+
+            # 함수 호출 체크
+            if self.check(TokenTypes.LPAREN):
+                left = self.parse_call_expression(left)
+
+            # 인덱싱 체크
+            if self.check(TokenTypes.LBRACKET):
+                left = self.parse_index_expression(left)
+
+            # 속성 접근 체크
+            if self.check(TokenTypes.DOT):
+                left = self.parse_attribute_expression(left)
+
+        return left
+
+    def parse_unary(self) -> Expression:
+        """단항 연산 파싱"""
+        if self.check(TokenTypes.MINUS):
+            self.advance()
+            expr = self.parse_unary()
+            return UnaryOp("-", expr, 0, 0)
+
+        if self.check(TokenTypes.NOT):
+            self.advance()
+            expr = self.parse_unary()
+            return UnaryOp("not", expr, 0, 0)
+
+        if self.check(TokenTypes.TILDE):
+            self.advance()
+            expr = self.parse_unary()
+            return UnaryOp("~", expr, 0, 0)
+
+        return self.parse_postfix()
+
+    def parse_postfix(self) -> Expression:
+        """후치 연산 파싱"""
+        expr = self.parse_primary()
+
+        while True:
+            # 함수 호출
+            if self.check(TokenTypes.LPAREN):
+                expr = self.parse_call_expression(expr)
+            # 인덱싱
+            elif self.check(TokenTypes.LBRACKET):
+                expr = self.parse_index_expression(expr)
+            # 속성 접근
+            elif self.check(TokenTypes.DOT):
+                expr = self.parse_attribute_expression(expr)
+            else:
+                break
+
+        return expr
+
+    def parse_primary(self) -> Expression:
+        """기본 표현식 파싱"""
+        # 정수
+        if self.check(TokenTypes.INT):
+            token = self.current_token()
+            self.advance()
+            return IntLiteral(int(token.value), 0, 0)
+
+        # 부동소수점
+        if self.check(TokenTypes.FLOAT):
+            token = self.current_token()
+            self.advance()
+            return FloatLiteral(float(token.value), 0, 0)
+
+        # 문자열
+        if self.check(TokenTypes.STRING):
+            token = self.current_token()
+            self.advance()
+            return StringLiteral(token.value, 0, 0)
+
+        # True/False/None
+        if self.check(TokenTypes.TRUE):
+            self.advance()
+            return BoolLiteral(True, 0, 0)
+
+        if self.check(TokenTypes.FALSE):
+            self.advance()
+            return BoolLiteral(False, 0, 0)
+
+        if self.check(TokenTypes.NONE):
+            self.advance()
+            return None
+
+        # 식별자
+        if self.check(TokenTypes.IDENTIFIER):
+            token = self.current_token()
+            self.advance()
+            return Identifier(token.value, 0, 0)
+
+        # 괄호 표현식
+        if self.check(TokenTypes.LPAREN):
+            self.advance()
+            expr = self.parse_expression()
+            self.expect(TokenTypes.RPAREN)
+            return expr
+
+        # 리스트
+        if self.check(TokenTypes.LBRACKET):
+            return self.parse_list_literal()
+
+        # 딕셔너리
+        if self.check(TokenTypes.LBRACE):
+            return self.parse_dict_literal()
+
+        # lambda
+        if self.check(TokenTypes.LAMBDA):
+            return self.parse_lambda()
+
+        return None
+
+    def parse_call_expression(self, func: Expression) -> Expression:
+        """함수 호출 파싱"""
+        self.advance()  # (
+        args = []
+
+        while not self.check(TokenTypes.RPAREN) and not self.is_at_end():
+            args.append(self.parse_expression())
+            if self.check(TokenTypes.COMMA):
+                self.advance()
+            else:
+                break
+
+        self.expect(TokenTypes.RPAREN)
+        return CallExpression(func, args, 0, 0)
+
+    def parse_index_expression(self, obj: Expression) -> Expression:
+        """인덱싱 파싱"""
+        self.advance()  # [
+        index = self.parse_expression()
+        self.expect(TokenTypes.RBRACKET)
+        return IndexExpression(obj, index, 0, 0)
+
+    def parse_attribute_expression(self, obj: Expression) -> Expression:
+        """속성 접근 파싱"""
+        self.advance()  # .
+        name_token = self.current_token()
+        self.expect(TokenTypes.IDENTIFIER)
+        return AttributeExpression(obj, name_token.value, 0, 0)
+
+    def parse_list_literal(self) -> Expression:
+        """리스트 리터럴 파싱"""
+        self.advance()  # [
+        elements = []
+
+        while not self.check(TokenTypes.RBRACKET) and not self.is_at_end():
+            elements.append(self.parse_expression())
+            if self.check(TokenTypes.COMMA):
+                self.advance()
+            else:
+                break
+
+        self.expect(TokenTypes.RBRACKET)
+        return ListLiteral(elements, 0, 0)
+
+    def parse_dict_literal(self) -> Expression:
+        """딕셔너리 리터럴 파싱"""
+        self.advance()  # {
+        keys = []
+        values = []
+
+        while not self.check(TokenTypes.RBRACE) and not self.is_at_end():
+            key = self.parse_expression()
+            self.expect(TokenTypes.COLON)
+            value = self.parse_expression()
+            keys.append(key)
+            values.append(value)
+
+            if self.check(TokenTypes.COMMA):
+                self.advance()
+            else:
+                break
+
+        self.expect(TokenTypes.RBRACE)
+        return DictLiteral(keys, values, 0, 0)
+
+    def parse_lambda(self) -> Expression:
+        """Lambda 표현식 파싱"""
+        self.advance()  # lambda
+        # 간단한 구현: lambda x: x + 1 형태
+        params = []
+
+        if not self.check(TokenTypes.COLON):
+            while not self.check(TokenTypes.COLON) and not self.is_at_end():
+                param_token = self.current_token()
+                self.expect(TokenTypes.IDENTIFIER)
+                params.append(param_token.value)
+
+                if self.check(TokenTypes.COMMA):
+                    self.advance()
+
+        self.expect(TokenTypes.COLON)
+        body = self.parse_expression()
+
+        # Lambda를 함수 정의로 변환
+        return_stmt = ReturnStatement(body, 0, 0)
+        return FunctionDef("<lambda>", params, [return_stmt], "any", 0, 0)
+
+    def parse_function_def(self) -> FunctionDef:
+        """함수 정의 파싱"""
+        self.advance()  # def
+
+        name_token = self.current_token()
+        self.expect(TokenTypes.IDENTIFIER)
+        name = name_token.value
+
+        self.expect(TokenTypes.LPAREN)
+        params = self.parse_parameters()
+        self.expect(TokenTypes.RPAREN)
+
+        return_type = "any"
+        if self.check(TokenTypes.ARROW):
+            self.advance()
+            type_token = self.current_token()
+            self.advance()
+            return_type = type_token.value
+
+        self.expect(TokenTypes.COLON)
+        self.consume_newline()
+        self.expect(TokenTypes.INDENT)
+
+        body = self.parse_block()
+
+        self.expect(TokenTypes.DEDENT)
+
+        return FunctionDef(name, params, body, return_type, 0, 0)
+
+    def parse_parameters(self) -> list[str]:
+        """매개변수 리스트 파싱"""
+        params = []
+
+        while not self.check(TokenTypes.RPAREN) and not self.is_at_end():
+            param_token = self.current_token()
+            self.expect(TokenTypes.IDENTIFIER)
+            params.append(param_token.value)
+
+            if self.check(TokenTypes.COMMA):
+                self.advance()
+            else:
+                break
+
+        return params
+
+    def parse_class_def(self) -> ClassDef:
+        """클래스 정의 파싱"""
+        self.advance()  # class
+
+        name_token = self.current_token()
+        self.expect(TokenTypes.IDENTIFIER)
+        name = name_token.value
+
+        base_class = "object"
+        if self.check(TokenTypes.LPAREN):
+            self.advance()
+            base_token = self.current_token()
+            self.expect(TokenTypes.IDENTIFIER)
+            base_class = base_token.value
+            self.expect(TokenTypes.RPAREN)
+
+        self.expect(TokenTypes.COLON)
+        self.consume_newline()
+        self.expect(TokenTypes.INDENT)
+
+        methods = []
+        body = []
+
+        while not self.check(TokenTypes.DEDENT) and not self.is_at_end():
+            if self.check(TokenTypes.DEF):
+                methods.append(self.parse_function_def())
+            else:
+                body.append(self.parse_statement())
+
+        self.expect(TokenTypes.DEDENT)
+
+        return ClassDef(name, base_class, methods, body, 0, 0)
+
+    def parse_if_statement(self) -> IfStatement:
+        """if 문 파싱"""
+        self.advance()  # if
+
+        condition = self.parse_expression()
+        self.expect(TokenTypes.COLON)
+        self.consume_newline()
+        self.expect(TokenTypes.INDENT)
+
+        then_body = self.parse_block()
+
+        self.expect(TokenTypes.DEDENT)
+
+        else_body = []
+        if self.check(TokenTypes.ELSE):
+            self.advance()
+            self.expect(TokenTypes.COLON)
+            self.consume_newline()
+            self.expect(TokenTypes.INDENT)
+            else_body = self.parse_block()
+            self.expect(TokenTypes.DEDENT)
+        elif self.check(TokenTypes.ELIF):
+            elif_stmt = self.parse_if_statement()
+            else_body = [elif_stmt]
+
+        return IfStatement(condition, then_body, else_body, 0, 0)
+
+    def parse_for_loop(self) -> ForStatement:
+        """for 루프 파싱"""
+        self.advance()  # for
+
+        target_token = self.current_token()
+        self.expect(TokenTypes.IDENTIFIER)
+        target = target_token.value
+
+        self.expect(TokenTypes.IN)
+        iter_expr = self.parse_expression()
+
+        self.expect(TokenTypes.COLON)
+        self.consume_newline()
+        self.expect(TokenTypes.INDENT)
+
+        body = self.parse_block()
+
+        self.expect(TokenTypes.DEDENT)
+
+        return ForStatement(target, iter_expr, body, 0, 0)
+
+    def parse_while_loop(self) -> WhileStatement:
+        """while 루프 파싱"""
+        self.advance()  # while
+
+        condition = self.parse_expression()
+        self.expect(TokenTypes.COLON)
+        self.consume_newline()
+        self.expect(TokenTypes.INDENT)
+
+        body = self.parse_block()
+
+        self.expect(TokenTypes.DEDENT)
+
+        return WhileStatement(condition, body, 0, 0)
+
+    def parse_block(self) -> list[Statement]:
+        """블록 파싱"""
+        statements = []
+
+        while not self.check(TokenTypes.DEDENT) and not self.is_at_end():
+            if self.check(TokenTypes.NEWLINE):
+                self.advance()
+                continue
+
+            stmt = self.parse_statement()
+            if stmt is not None:
+                statements.append(stmt)
+
+        return statements
+
+    # ============================================
+    # Helper Functions
+    # ============================================
+
+    def current_token(self) -> Token:
+        """현재 토큰"""
+        if self.pos < len(self.tokens):
+            return self.tokens[self.pos]
+        return None
+
+    def advance(self) -> None:
+        """다음 토큰으로 이동"""
+        if self.pos < len(self.tokens):
+            self.pos = self.pos + 1
+
+    def check(self, token_type: str) -> bool:
+        """토큰 타입 확인"""
+        token = self.current_token()
+        if token is None:
+            return False
+        return token.type == token_type
+
+    def expect(self, token_type: str) -> Token:
+        """토큰 타입 기대 및 소비"""
+        token = self.current_token()
+        if token is None or token.type != token_type:
+            return None
+        self.advance()
+        return token
+
+    def is_at_end(self) -> bool:
+        """끝에 도달했는지 확인"""
+        token = self.current_token()
+        return token is None or token.type == TokenTypes.EOF
+
+    def consume_newline(self) -> None:
+        """개행 소비"""
+        while self.check(TokenTypes.NEWLINE):
+            self.advance()
+
+    def get_precedence(self, token: Token) -> int:
+        """연산자 우선순위"""
+        if token is None:
+            return 0
+
+        precedences = {
+            TokenTypes.OR: 1,
+            TokenTypes.AND: 2,
+            TokenTypes.NOT: 3,
+            TokenTypes.EQ: 4,
+            TokenTypes.NE: 4,
+            TokenTypes.LT: 5,
+            TokenTypes.LE: 5,
+            TokenTypes.GT: 5,
+            TokenTypes.GE: 5,
+            TokenTypes.PIPE: 6,
+            TokenTypes.CARET: 7,
+            TokenTypes.AMPERSAND: 8,
+            TokenTypes.LSHIFT: 9,
+            TokenTypes.RSHIFT: 9,
+            TokenTypes.PLUS: 10,
+            TokenTypes.MINUS: 10,
+            TokenTypes.STAR: 11,
+            TokenTypes.SLASH: 11,
+            TokenTypes.PERCENT: 11,
+            TokenTypes.DOUBLESTAR: 12,
+        }
+
+        if token.type in precedences:
+            return precedences[token.type]
+        return 0
+
+
+def parse(source: str) -> list[Statement]:
+    """소스 코드를 AST로 파싱"""
+    lexer = Lexer(source)
+    tokens = lexer.tokenize()
+    parser = Parser(tokens)
+    return parser.parse()
