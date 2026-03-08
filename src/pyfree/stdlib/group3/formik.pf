@@ -1,0 +1,7 @@
+# formik form management
+class Formik:
+  def __init__(self): self.values = {}
+  def set_field_value(self, field, value): self.values[field] = value
+  def handle_submit(self, callback): return callback
+def formik(props = None): return Formik()
+export Formik, formik

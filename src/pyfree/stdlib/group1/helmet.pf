@@ -1,0 +1,114 @@
+# PyFree helmet: 보안 헤더 미들웨어
+# npm helmet 완전 대체
+
+class Helmet:
+  """Express 보안 헤더 미들웨어"""
+
+  def __init__(self, options = None):
+    self.options = options if options is not None else {}
+
+  def content_security_policy(self, directives = None):
+    """CSP 헤더"""
+    if directives is None:
+      directives = {
+        "default-src": ["'self'"],
+        "script-src": ["'self'", "'unsafe-inline'"],
+        "style-src": ["'self'", "'unsafe-inline'"]
+      }
+
+    return {
+      "header": "Content-Security-Policy",
+      "directives": directives
+    }
+
+  def x_frame_options(self, mode = "DENY"):
+    """X-Frame-Options 헤더"""
+    return {
+      "header": "X-Frame-Options",
+      "value": mode
+    }
+
+  def x_xss_protection(self):
+    """X-XSS-Protection 헤더"""
+    return {
+      "header": "X-XSS-Protection",
+      "value": "1; mode=block"
+    }
+
+  def x_content_type_options(self):
+    """X-Content-Type-Options 헤더"""
+    return {
+      "header": "X-Content-Type-Options",
+      "value": "nosniff"
+    }
+
+  def strict_transport_security(self, maxAge = 31536000, includeSubDomains = True):
+    """HSTS 헤더"""
+    hsts = "max-age=" + str(maxAge)
+    if includeSubDomains:
+      hsts = hsts + "; includeSubDomains"
+    return {
+      "header": "Strict-Transport-Security",
+      "value": hsts
+    }
+
+  def referrer_policy(self, policy = "no-referrer"):
+    """Referrer-Policy 헤더"""
+    return {
+      "header": "Referrer-Policy",
+      "value": policy
+    }
+
+  def get_all_headers(self):
+    """모든 보안 헤더 반환"""
+    headers = []
+    headers.append(self.content_security_policy())
+    headers.append(self.x_frame_options())
+    headers.append(self.x_xss_protection())
+    headers.append(self.x_content_type_options())
+    headers.append(self.strict_transport_security())
+    headers.append(self.referrer_policy())
+    return headers
+
+  def middleware(self):
+    """Express 미들웨어로 반환"""
+    headers = self.get_all_headers()
+    return {
+      "type": "middleware",
+      "headers": headers,
+      "apply": True
+    }
+
+# 싱글톤
+_helmet = Helmet()
+
+def helmet(options = None):
+  """Helmet 미들웨어 생성"""
+  h = Helmet(options)
+  return h.middleware()
+
+def content_security_policy(directives = None):
+  """CSP 미들웨어"""
+  return _helmet.content_security_policy(directives)
+
+def x_frame_options(mode = "DENY"):
+  """X-Frame-Options 미들웨어"""
+  return _helmet.x_frame_options(mode)
+
+def x_xss_protection():
+  """X-XSS-Protection 미들웨어"""
+  return _helmet.x_xss_protection()
+
+def x_content_type_options():
+  """X-Content-Type-Options 미들웨어"""
+  return _helmet.x_content_type_options()
+
+def strict_transport_security(maxAge = 31536000):
+  """HSTS 미들웨어"""
+  return _helmet.strict_transport_security(maxAge)
+
+def referrer_policy(policy = "no-referrer"):
+  """Referrer-Policy 미들웨어"""
+  return _helmet.referrer_policy(policy)
+
+export Helmet, helmet, content_security_policy, x_frame_options, x_xss_protection, x_content_type_options, strict_transport_security, referrer_policy

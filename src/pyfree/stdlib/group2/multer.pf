@@ -1,0 +1,6 @@
+# multer file upload
+class Multer:
+  def single(self, fieldname): return {"type": "middleware", "field": fieldname}
+  def array(self, fieldname, maxCount = None): return {"type": "middleware", "field": fieldname}
+def multer(options = None): return Multer()
+export Multer, multer

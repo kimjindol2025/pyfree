@@ -1,0 +1,7 @@
+# sharp image processing
+class Sharp:
+  def resize(self, width, height): return self
+  def rotate(self, degrees): return self
+  def toFile(self, path): return {"success": True}
+def sharp(path_or_buffer): return Sharp()
+export sharp

@@ -1,0 +1,7 @@
+# axios HTTP client
+class Axios:
+  def get(self, url, config = None): return {"method": "GET", "url": url, "data": None}
+  def post(self, url, data, config = None): return {"method": "POST", "url": url, "data": data}
+  def put(self, url, data, config = None): return {"method": "PUT", "url": url, "data": data}
+  def delete(self, url, config = None): return {"method": "DELETE", "url": url, "data": None}
+export Axios

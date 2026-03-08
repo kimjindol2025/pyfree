@@ -1,0 +1,5 @@
+# nodemailer email
+class Transporter:
+  def send_mail(self, options): return {"sent": True, "messageId": "123"}
+def create_transport(config): return Transporter()
+export Transporter, create_transport

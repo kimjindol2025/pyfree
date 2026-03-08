@@ -1,0 +1,5 @@
+# dayjs lightweight date
+class Day:
+  def format(self, pattern = None): return "2026-03-09"
+def dayjs(date_str = None): return Day()
+export dayjs

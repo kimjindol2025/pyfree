@@ -1,0 +1,4 @@
+# swagger API docs
+def swagger_ui_express(spec = None):
+  return {"type": "middleware", "spec": spec}
+export swagger_ui_express

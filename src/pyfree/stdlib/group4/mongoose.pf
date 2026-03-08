@@ -1,0 +1,12 @@
+# mongoose MongoDB ODM
+class Schema:
+  def __init__(self, definition): self.definition = definition
+class Model:
+  def __init__(self, name, schema): self.name = name
+  def find(self, query = None): return []
+  def find_by_id(self, id): return None
+  def create(self, data): return {"_id": "123", **data}
+  def save(self): return True
+def schema(definition): return Schema(definition)
+def model(name, schema_obj): return Model(name, schema_obj)
+export Schema, Model, schema, model

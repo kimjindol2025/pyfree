@@ -1,0 +1,288 @@
+# PyFree yup: 데이터 검증 스키마
+# npm yup 완전 대체
+
+class ValidationError:
+  """검증 에러"""
+
+  def __init__(self, message, path = None, value = None):
+    self.message = message
+    self.path = path
+    self.value = value
+    self.errors = [message]
+
+  def get_error(self):
+    """에러 메시지"""
+    return self.message
+
+class BaseSchema:
+  """기본 스키마"""
+
+  def __init__(self):
+    self.required_val = False
+    self.default_val = None
+    self.validators = []
+    self.error_message = None
+
+  def required(self):
+    """필수 필드"""
+    self.required_val = True
+    return self
+
+  def not_required(self):
+    """선택 필드"""
+    self.required_val = False
+    return self
+
+  def default(self, value):
+    """기본값"""
+    self.default_val = value
+    return self
+
+  def add_validator(self, validator):
+    """검증자 추가"""
+    self.validators.append(validator)
+    return self
+
+  def validate(self, value):
+    """검증 수행"""
+    if value is None and not self.required_val:
+      return (True, self.default_val)
+
+    if value is None and self.required_val:
+      raise ValidationError("필수 필드입니다")
+
+    # 각 검증자 실행
+    for validator in self.validators:
+      try:
+        result = validator(value)
+        if not result:
+          raise ValidationError("검증 실패")
+      except Exception as e:
+        raise ValidationError(str(e))
+
+    return (True, value)
+
+  def validate_sync(self, value):
+    """동기 검증"""
+    return self.validate(value)
+
+class StringSchema(BaseSchema):
+  """문자열 스키마"""
+
+  def __init__(self):
+    BaseSchema.__init__(self)
+    self._min_length = None
+    self._max_length = None
+    self._email = False
+    self._url = False
+
+  def min(self, length):
+    """최소 길이"""
+    self._min_length = length
+    self.add_validator(lambda v: len(str(v)) >= length)
+    return self
+
+  def max(self, length):
+    """최대 길이"""
+    self._max_length = length
+    self.add_validator(lambda v: len(str(v)) <= length)
+    return self
+
+  def email(self):
+    """이메일 형식"""
+    self._email = True
+    self.add_validator(lambda v: "@" in str(v) and "." in str(v))
+    return self
+
+  def url(self):
+    """URL 형식"""
+    self._url = True
+    self.add_validator(lambda v: "http" in str(v))
+    return self
+
+  def matches(self, pattern):
+    """정규식 매칭"""
+    self.add_validator(lambda v: pattern in str(v))
+    return self
+
+class NumberSchema(BaseSchema):
+  """숫자 스키마"""
+
+  def __init__(self):
+    BaseSchema.__init__(self)
+    self._min_val = None
+    self._max_val = None
+    self._integer = False
+
+  def min(self, value):
+    """최소값"""
+    self._min_val = value
+    self.add_validator(lambda v: float(v) >= value)
+    return self
+
+  def max(self, value):
+    """최대값"""
+    self._max_val = value
+    self.add_validator(lambda v: float(v) <= value)
+    return self
+
+  def integer(self):
+    """정수만"""
+    self._integer = True
+    self.add_validator(lambda v: isinstance(v, int) or (isinstance(v, float) and v == int(v)))
+    return self
+
+  def positive(self):
+    """양수"""
+    self.add_validator(lambda v: float(v) > 0)
+    return self
+
+  def negative(self):
+    """음수"""
+    self.add_validator(lambda v: float(v) < 0)
+    return self
+
+class BooleanSchema(BaseSchema):
+  """불리언 스키마"""
+
+  def __init__(self):
+    BaseSchema.__init__(self)
+
+class DateSchema(BaseSchema):
+  """날짜 스키마"""
+
+  def __init__(self):
+    BaseSchema.__init__(self)
+
+  def min(self, date):
+    """최소 날짜"""
+    self.add_validator(lambda v: v >= date)
+    return self
+
+  def max(self, date):
+    """최대 날짜"""
+    self.add_validator(lambda v: v <= date)
+    return self
+
+class ArraySchema(BaseSchema):
+  """배열 스키마"""
+
+  def __init__(self, item_schema = None):
+    BaseSchema.__init__(self)
+    self.item_schema = item_schema
+    self._min_length = None
+    self._max_length = None
+
+  def of(self, item_schema):
+    """항목 스키마"""
+    self.item_schema = item_schema
+    return self
+
+  def min(self, length):
+    """최소 길이"""
+    self._min_length = length
+    self.add_validator(lambda v: len(v) >= length if isinstance(v, list) else False)
+    return self
+
+  def max(self, length):
+    """최대 길이"""
+    self._max_length = length
+    self.add_validator(lambda v: len(v) <= length if isinstance(v, list) else False)
+    return self
+
+class ObjectSchema(BaseSchema):
+  """객체 스키마"""
+
+  def __init__(self):
+    BaseSchema.__init__(self)
+    self.fields_schema = {}
+
+  def shape(self, fields):
+    """필드 정의: shape({name: string(), age: number()})"""
+    self.fields_schema = fields
+    return self
+
+  def validate(self, value):
+    """객체 검증"""
+    if not isinstance(value, dict):
+      raise ValidationError("객체가 아닙니다")
+
+    result = {}
+    for key, schema in self.fields_schema.items():
+      field_value = value.get(key)
+      try:
+        success, validated = schema.validate(field_value)
+        if success:
+          result[key] = validated
+      except Exception as e:
+        raise ValidationError(f"{key}: {str(e)}")
+
+    return (True, result)
+
+class Yup:
+  """Yup 스키마 빌더"""
+
+  def string(self):
+    """문자열 스키마"""
+    return StringSchema()
+
+  def number(self):
+    """숫자 스키마"""
+    return NumberSchema()
+
+  def boolean(self):
+    """불리언 스키마"""
+    return BooleanSchema()
+
+  def date(self):
+    """날짜 스키마"""
+    return DateSchema()
+
+  def array(self, item_schema = None):
+    """배열 스키마"""
+    return ArraySchema(item_schema)
+
+  def object(self):
+    """객체 스키마"""
+    return ObjectSchema()
+
+  def ref(self, path):
+    """참조"""
+    return path
+
+  def lazy(self, schema_fn):
+    """지연 평가"""
+    return schema_fn()
+
+# 싱글톤
+_yup = Yup()
+
+def string():
+  """문자열 스키마"""
+  return _yup.string()
+
+def number():
+  """숫자 스키마"""
+  return _yup.number()
+
+def boolean():
+  """불리언 스키마"""
+  return _yup.boolean()
+
+def date():
+  """날짜 스키마"""
+  return _yup.date()
+
+def array(item_schema = None):
+  """배열 스키마"""
+  return _yup.array(item_schema)
+
+def object():
+  """객체 스키마"""
+  return _yup.object()
+
+def lazy(schema_fn):
+  """지연 평가"""
+  return _yup.lazy(schema_fn)
+
+export ValidationError, BaseSchema, StringSchema, NumberSchema, BooleanSchema, DateSchema, ArraySchema, ObjectSchema, Yup, string, number, boolean, date, array, object, lazy

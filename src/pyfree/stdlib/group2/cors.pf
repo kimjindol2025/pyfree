@@ -1,0 +1,4 @@
+# cors middleware
+def cors(options = None):
+  return {"type": "middleware", "origin": "*", "methods": ["GET", "POST"]}
+export cors

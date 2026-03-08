@@ -1,0 +1,7 @@
+# redux state management
+class Store:
+  def __init__(self): self.state = {}
+  def get_state(self): return self.state
+  def dispatch(self, action): return action
+def create_store(reducer): return Store()
+export Store, create_store

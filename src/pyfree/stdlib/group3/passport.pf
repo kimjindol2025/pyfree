@@ -1,0 +1,6 @@
+# passport authentication
+class PassportStrategy:
+  pass
+def use(strategy): pass
+def authenticate(name): return {"type": "middleware", "strategy": name}
+export use, authenticate

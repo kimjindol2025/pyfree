@@ -1,0 +1,6 @@
+# socket.io realtime
+class SocketIO:
+  def on(self, event, handler): pass
+  def emit(self, event, data): pass
+def create_server(http_server = None): return SocketIO()
+export SocketIO, create_server

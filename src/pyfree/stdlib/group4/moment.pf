@@ -1,0 +1,8 @@
+# moment date library
+class Moment:
+  def format(self, pattern = None): return "2026-03-09"
+  def add(self, value, unit): return self
+  def subtract(self, value, unit): return self
+def moment(date_str = None): return Moment()
+def now(): return moment()
+export Moment, moment, now

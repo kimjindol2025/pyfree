@@ -1,0 +1,7 @@
+# winston logging
+class Logger:
+  def info(self, message): print(f"[INFO] {message}")
+  def error(self, message): print(f"[ERROR] {message}")
+  def warn(self, message): print(f"[WARN] {message}")
+def create_logger(options = None): return Logger()
+export Logger, create_logger

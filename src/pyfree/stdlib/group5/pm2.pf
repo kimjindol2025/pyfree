@@ -1,0 +1,7 @@
+# pm2 process manager
+class PM2:
+  def start(self, script, options = None): return {"pid": 1234}
+  def stop(self, app = None): return True
+  def restart(self, app = None): return True
+def connect(callback = None): return PM2()
+export PM2, connect

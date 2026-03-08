@@ -1,0 +1,73 @@
+# PyFree bcrypt: 비밀번호 해싱
+# npm bcrypt 완전 대체
+
+class BCrypt:
+  """비밀번호 해싱 및 검증"""
+
+  def __init__(self):
+    self.saltRounds = 10
+
+  def hash(self, password, saltRounds = None):
+    """비밀번호 해싱: bcrypt.hash('password', 10)"""
+    if saltRounds is None:
+      saltRounds = self.saltRounds
+
+    if not isinstance(password, str):
+      password = str(password)
+
+    return $native.bcrypt_hash(password, saltRounds)
+
+  def hash_sync(self, password, saltRounds = None):
+    """동기 해싱"""
+    return self.hash(password, saltRounds)
+
+  def compare(self, password, hash):
+    """비밀번호 검증: bcrypt.compare('password', hashedPassword)"""
+    if not isinstance(password, str):
+      password = str(password)
+
+    return $native.bcrypt_compare(password, hash)
+
+  def compare_sync(self, password, hash):
+    """동기 검증"""
+    return self.compare(password, hash)
+
+  def gen_salt(self, rounds = None):
+    """솔트 생성"""
+    if rounds is None:
+      rounds = self.saltRounds
+
+    return $native.bcrypt_gen_salt(rounds)
+
+  def set_salt_rounds(self, rounds):
+    """기본 라운드 설정"""
+    self.saltRounds = rounds
+
+# 싱글톤
+_bcrypt = BCrypt()
+
+def hash(password, saltRounds = None):
+  """비밀번호 해싱"""
+  return _bcrypt.hash(password, saltRounds)
+
+def hash_sync(password, saltRounds = None):
+  """동기 해싱"""
+  return _bcrypt.hash_sync(password, saltRounds)
+
+def compare(password, hashed):
+  """비밀번호 검증"""
+  return _bcrypt.compare(password, hashed)
+
+def compare_sync(password, hashed):
+  """동기 검증"""
+  return _bcrypt.compare_sync(password, hashed)
+
+def gen_salt(rounds = None):
+  """솔트 생성"""
+  return _bcrypt.gen_salt(rounds)
+
+def set_salt_rounds(rounds):
+  """기본 라운드 설정"""
+  _bcrypt.set_salt_rounds(rounds)
+
+export BCrypt, hash, hash_sync, compare, compare_sync, gen_salt, set_salt_rounds

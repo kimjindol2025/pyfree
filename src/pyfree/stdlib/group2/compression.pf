@@ -1,0 +1,4 @@
+# compression middleware  
+def compression(options = None):
+  return {"type": "middleware", "algorithm": "gzip"}
+export compression

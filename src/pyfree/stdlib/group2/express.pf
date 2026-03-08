@@ -1,0 +1,123 @@
+# PyFree express: 웹 서버 프레임워크
+# npm express 완전 대체
+
+class Request:
+  """HTTP 요청 객체"""
+  def __init__(self):
+    self.method = "GET"
+    self.url = "/"
+    self.headers = {}
+    self.body = {}
+    self.params = {}
+    self.query = {}
+    self.cookies = {}
+
+class Response:
+  """HTTP 응답 객체"""
+  def __init__(self):
+    self.status_code = 200
+    self.headers = {"Content-Type": "application/json"}
+    self.body = ""
+
+  def status(self, code):
+    """상태 코드 설정"""
+    self.status_code = code
+    return self
+
+  def send(self, data):
+    """응답 전송"""
+    self.body = str(data)
+    return self
+
+  def json(self, data):
+    """JSON 응답"""
+    self.headers["Content-Type"] = "application/json"
+    self.body = $native.express_json_stringify(data)
+    return self
+
+  def set_header(self, key, value):
+    """헤더 설정"""
+    self.headers[key] = value
+    return self
+
+class Router:
+  """라우터"""
+  def __init__(self):
+    self.routes = []
+
+  def get(self, path, handler):
+    """GET 라우트"""
+    self.routes.append({"method": "GET", "path": path, "handler": handler})
+    return self
+
+  def post(self, path, handler):
+    """POST 라우트"""
+    self.routes.append({"method": "POST", "path": path, "handler": handler})
+    return self
+
+  def put(self, path, handler):
+    """PUT 라우트"""
+    self.routes.append({"method": "PUT", "path": path, "handler": handler})
+    return self
+
+  def delete(self, path, handler):
+    """DELETE 라우트"""
+    self.routes.append({"method": "DELETE", "path": path, "handler": handler})
+    return self
+
+class Express:
+  """Express 애플리케이션"""
+  def __init__(self):
+    self.middlewares = []
+    self.routes = []
+    self.port = 3000
+    self.running = False
+
+  def use(self, middleware):
+    """미들웨어 추가"""
+    self.middlewares.append(middleware)
+    return self
+
+  def get(self, path, handler):
+    """GET 라우트"""
+    self.routes.append({"method": "GET", "path": path, "handler": handler})
+    return self
+
+  def post(self, path, handler):
+    """POST 라우트"""
+    self.routes.append({"method": "POST", "path": path, "handler": handler})
+    return self
+
+  def put(self, path, handler):
+    """PUT 라우트"""
+    self.routes.append({"method": "PUT", "path": path, "handler": handler})
+    return self
+
+  def delete(self, path, handler):
+    """DELETE 라우트"""
+    self.routes.append({"method": "DELETE", "path": path, "handler": handler})
+    return self
+
+  def listen(self, port, callback = None):
+    """서버 시작"""
+    self.port = port
+    self.running = True
+    $native.express_listen(self.port)
+    if callback:
+      callback()
+    return self
+
+  def close(self):
+    """서버 종료"""
+    self.running = False
+    return self
+
+def create_app():
+  """Express 앱 생성"""
+  return Express()
+
+def router():
+  """라우터 생성"""
+  return Router()
+
+export Request, Response, Router, Express, create_app, router

@@ -1,0 +1,107 @@
+# PyFree dotenv: 환경변수 관리
+# npm dotenv 완전 대체
+
+class DotEnv:
+  """환경변수 파일 로더"""
+
+  def __init__(self):
+    self.values = {}
+    self.loaded = False
+
+  def load(self, path = ".env"):
+    """파일 로드: dotenv.load('.env')"""
+    try:
+      content = $native.dotenv_read_file(path)
+      if content is None:
+        return False
+      self.values = self.parse(content)
+      self.loaded = True
+      return True
+    except:
+      return False
+
+  def parse(self, content):
+    """내용 파싱"""
+    result = {}
+    lines = content.split("\n")
+
+    for line in lines:
+      if len(line) == 0 or line[0] == "#":
+        continue
+
+      if "=" not in line:
+        continue
+
+      parts = line.split("=", 1)
+      key = parts[0].strip()
+      value = parts[1].strip() if len(parts) > 1 else ""
+
+      # 따옴표 제거
+      if len(value) >= 2:
+        if (value[0] == "\"" and value[-1] == "\"") or (value[0] == "'" and value[-1] == "'"):
+          value = value[1:-1]
+
+      result[key] = value
+
+    return result
+
+  def get(self, key, default = None):
+    """환경변수 조회"""
+    if key in self.values:
+      return self.values[key]
+    return default
+
+  def set(self, key, value):
+    """환경변수 설정"""
+    self.values[key] = str(value)
+
+  def has(self, key):
+    """존재 확인"""
+    return key in self.values
+
+  def keys(self):
+    """모든 키 반환"""
+    return list(self.values.keys())
+
+  def values(self):
+    """모든 값 반환"""
+    return list(self.values.values())
+
+  def to_dict(self):
+    """딕셔너리로 변환"""
+    return self.values.copy()
+
+# 싱글톤 인스턴스
+_instance = DotEnv()
+
+def load(path = ".env"):
+  """파일 로드"""
+  return _instance.load(path)
+
+def parse(content):
+  """내용 파싱"""
+  return _instance.parse(content)
+
+def get(key, default = None):
+  """환경변수 조회"""
+  return _instance.get(key, default)
+
+def set(key, value):
+  """환경변수 설정"""
+  _instance.set(key, value)
+
+def has(key):
+  """존재 확인"""
+  return _instance.has(key)
+
+def config(options = None):
+  """초기화: dotenv.config({path: '.env'})"""
+  if options is None:
+    options = {}
+
+  path = options.get("path", ".env") if isinstance(options, dict) else ".env"
+  result = _instance.load(path)
+
+  return {"parsed": _instance.to_dict()} if result else {"error": "File not found"}
+
+export DotEnv, load, parse, get, set, has, config
