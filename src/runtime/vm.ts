@@ -579,4 +579,154 @@ export const NativeLibrary = {
   min: (...args: number[]): number => Math.min(...args),
   pow: (base: number, exp: number): number => Math.pow(base, exp),
   sqrt: (value: number): number => Math.sqrt(value),
+
+  // 타입 변환
+  float: (value: PyFreeValue): number => {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') return parseFloat(value);
+    if (typeof value === 'boolean') return value ? 1.0 : 0.0;
+    return NaN;
+  },
+
+  list: (iterable?: PyFreeValue): any[] => {
+    if (iterable === undefined || iterable === null) return [];
+    if (Array.isArray(iterable)) return [...iterable];
+    if (typeof iterable === 'string') return iterable.split('');
+    if (typeof iterable === 'object') return Object.values(iterable);
+    return [];
+  },
+
+  dict: (obj?: PyFreeValue): Record<string, any> => {
+    if (obj === undefined || obj === null) return {};
+    if (typeof obj === 'object' && !Array.isArray(obj)) return { ...obj };
+    return {};
+  },
+
+  tuple: (iterable?: PyFreeValue): any[] => {
+    // Python tuple은 immutable이지만, JS에선 배열로 표현
+    if (iterable === undefined || iterable === null) return [];
+    if (Array.isArray(iterable)) return [...iterable];
+    if (typeof iterable === 'string') return iterable.split('');
+    return [];
+  },
+
+  // 시퀀스 함수
+  enumerate: (iterable: any[], start: number = 0): [number, any][] => {
+    return iterable.map((item, idx) => [start + idx, item]);
+  },
+
+  zip: (...iterables: any[][]): any[][] => {
+    if (iterables.length === 0) return [];
+    const minLen = Math.min(...iterables.map(it => (Array.isArray(it) ? it.length : 0)));
+    const result: any[][] = [];
+    for (let i = 0; i < minLen; i++) {
+      result.push(iterables.map(it => (Array.isArray(it) ? it[i] : undefined)));
+    }
+    return result;
+  },
+
+  sorted: (iterable: any[], reverse: boolean = false): any[] => {
+    const arr = Array.isArray(iterable) ? [...iterable] : Object.values(iterable);
+    arr.sort((a, b) => {
+      if (typeof a === 'number' && typeof b === 'number') return a - b;
+      if (typeof a === 'string' && typeof b === 'string') return a.localeCompare(b);
+      return 0;
+    });
+    return reverse ? arr.reverse() : arr;
+  },
+
+  reversed: (iterable: any[]): any[] => {
+    return Array.isArray(iterable) ? [...iterable].reverse() : Object.values(iterable).reverse();
+  },
+
+  // 논리 함수
+  all: (iterable: any[]): boolean => {
+    return Array.isArray(iterable) ? iterable.every(item => !!item) : true;
+  },
+
+  any: (iterable: any[]): boolean => {
+    return Array.isArray(iterable) ? iterable.some(item => !!item) : false;
+  },
+
+  map: (func: (arg: any) => any, iterable: any[]): any[] => {
+    return Array.isArray(iterable) ? iterable.map(func) : [];
+  },
+
+  filter: (func: (arg: any) => boolean, iterable: any[]): any[] => {
+    return Array.isArray(iterable) ? iterable.filter(func) : [];
+  },
+
+  // 기타
+  round: (value: number, ndigits: number = 0): number => {
+    const multiplier = Math.pow(10, ndigits);
+    return Math.round(value * multiplier) / multiplier;
+  },
+
+  divmod: (a: number, b: number): [number, number] => {
+    return [Math.floor(a / b), a % b];
+  },
+
+  ord: (char: string): number => {
+    return char.charCodeAt(0);
+  },
+
+  chr: (code: number): string => {
+    return String.fromCharCode(code);
+  },
+
+  hex: (value: number): string => {
+    return '0x' + Math.floor(value).toString(16);
+  },
+
+  oct: (value: number): string => {
+    return '0o' + Math.floor(value).toString(8);
+  },
+
+  bin: (value: number): string => {
+    return '0b' + Math.floor(value).toString(2);
+  },
+
+  // 객체 검사
+  isinstance: (obj: any, classname: string): boolean => {
+    const type = NativeLibrary.type(obj);
+    return type === classname;
+  },
+
+  hasattr: (obj: any, name: string): boolean => {
+    return obj !== null && obj !== undefined && name in obj;
+  },
+
+  getattr: (obj: any, name: string, defaultValue?: any): any => {
+    return obj !== null && obj !== undefined ? (obj[name] ?? defaultValue) : defaultValue;
+  },
+
+  setattr: (obj: any, name: string, value: any): null => {
+    if (obj !== null && obj !== undefined) {
+      obj[name] = value;
+    }
+    return null;
+  },
+
+  dir: (obj?: any): string[] => {
+    if (obj === undefined) return [];
+    if (obj === null) return [];
+    if (typeof obj === 'object') return Object.keys(obj).sort();
+    return [];
+  },
+
+  id: (obj: any): number => {
+    // Simulated object ID (unique hash)
+    return Math.floor(Math.random() * 1000000);
+  },
+
+  repr: (obj: any): string => {
+    if (obj === null) return 'None';
+    if (typeof obj === 'string') return `'${obj}'`;
+    if (Array.isArray(obj)) return `[${obj.map(x => NativeLibrary.repr(x)).join(', ')}]`;
+    return String(obj);
+  },
+
+  callable: (obj: any): boolean => {
+    return typeof obj === 'function';
+  },
 };
