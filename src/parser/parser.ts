@@ -1160,7 +1160,10 @@ export class PyFreeParser {
       } as AST.WildcardPattern;
     }
 
-    if (this.check(TokenType.IDENTIFIER)) {
+    // IDENTIFIER 또는 FreeLang 키워드 (Ok, Err 등) 처리
+    if (this.check(TokenType.IDENTIFIER) ||
+        this.check(TokenType.OK) ||
+        this.check(TokenType.ERR)) {
       // Constructor 또는 Identifier
       const token = this.advance();
 
@@ -1346,6 +1349,11 @@ export class PyFreeParser {
     }
 
     while (!this.check(TokenType.DEDENT) && !this.isAtEnd()) {
+      // Skip NEWLINE tokens within block
+      if (this.match(TokenType.NEWLINE)) {
+        continue;
+      }
+
       const stmt = this.parseStatement();
       if (stmt) {
         statements.push(stmt);
@@ -1429,20 +1437,63 @@ export class PyFreeParser {
 
   /**
    * 데코레이터 파싱
+   * @app.route("/users") 같은 체인 처리 지원
    */
   private parseDecorator(): AST.Decorator {
     const startToken = this.previous();
-    const name = this.consume(TokenType.IDENTIFIER, '데코레이터명 필요').value;
 
+    // 1단계: IDENTIFIER로 시작
+    let decoratorName = this.consume(TokenType.IDENTIFIER, '데코레이터명 필요').value;
+    let decoratorExpr: AST.Expression = {
+      type: 'Identifier',
+      name: decoratorName,
+      line: startToken.line,
+      column: startToken.column,
+    } as AST.Identifier;
+
+    // 2단계: postfix 처리 (체인: .property, ())
+    while (true) {
+      if (this.match(TokenType.DOT)) {
+        // .property 처리: app.route
+        const property = this.consume(TokenType.IDENTIFIER, '속성명 필요').value;
+        decoratorExpr = {
+          type: 'MemberAccess',
+          object: decoratorExpr,
+          property,
+          line: decoratorExpr.line,
+          column: decoratorExpr.column,
+        } as AST.MemberAccess;
+        // decoratorName은 처음 이름으로 유지 (최상위 객체 이름)
+      } else if (this.match(TokenType.LPAREN)) {
+        // () 처리: app.route(...)
+        const { args: parsedArgs, kwargs: parsedKwargs } = this.parseFunctionArguments();
+        this.consume(TokenType.RPAREN, ') 필요');
+
+        decoratorExpr = {
+          type: 'FunctionCall',
+          function: decoratorExpr,
+          args: parsedArgs,
+          kwargs: parsedKwargs,
+          line: decoratorExpr.line,
+          column: decoratorExpr.column,
+        } as AST.FunctionCall;
+      } else {
+        break;
+      }
+    }
+
+    // 3단계: 최종 데코레이터 객체 생성
     const args: AST.Expression[] = [];
     const kwargs = new Map<string, AST.Expression>();
 
-    if (this.match(TokenType.LPAREN)) {
-      const { args: parsedArgs, kwargs: parsedKwargs } = this.parseFunctionArguments();
-      this.consume(TokenType.RPAREN, ') 필요');
-
-      args.push(...parsedArgs.map((a) => a.value));
-      parsedKwargs.forEach((kwarg) => {
+    if (decoratorExpr.type === 'FunctionCall') {
+      const fc = decoratorExpr as AST.FunctionCall;
+      // Argument[] → Expression[] 변환
+      fc.args.forEach((arg) => {
+        args.push(arg.value);
+      });
+      // KeywordArgument[] → Map<string, Expression> 변환
+      fc.kwargs.forEach((kwarg) => {
         kwargs.set(kwarg.key, kwarg.value);
       });
     }
@@ -1453,7 +1504,7 @@ export class PyFreeParser {
 
     return {
       type: 'Decorator',
-      name,
+      name: decoratorName,
       args,
       kwargs,
       line: startToken.line,
@@ -1518,7 +1569,7 @@ export class PyFreeParser {
       this.check(TokenType.GREATER_THAN) ||
       this.check(TokenType.LESS_EQUAL) ||
       this.check(TokenType.GREATER_EQUAL) ||
-      this.check(TokenType.IN) ||
+      // IN 토큰 제거: for-in, comprehension 문맥에서만 처리
       this.check(TokenType.IS)
     );
   }

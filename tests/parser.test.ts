@@ -396,9 +396,8 @@ describe('PyFreeParser - 혼합 코드', () => {
   });
 
   test('match + Ok/Err pattern', () => {
-    const code = `match result:
-    Ok(v) => print(v)
-    Err(e) => print(e)`;
+    // FreeLang match { } 문법 사용 (Python 3.10 match/case 아님)
+    const code = `match result { Ok(v) => print(v), Err(e) => print(e) }`;
 
     const tokens = tokenize(code);
     const ast = parse(tokens);
