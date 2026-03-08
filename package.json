@@ -1,0 +1,29 @@
+{
+  "name": "pyfree",
+  "version": "0.1.0",
+  "description": "PyFree - Python + FreeLang Hybrid Language",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "dev": "ts-node src/main.ts",
+    "lexer-test": "jest tests/lexer.test.ts",
+    "parser-test": "jest tests/parser.test.ts"
+  },
+  "keywords": [
+    "python",
+    "freelang",
+    "hybrid",
+    "language",
+    "compiler"
+  ],
+  "author": "PyFree Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^18.15.0",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.0.0"
+  }
+}
