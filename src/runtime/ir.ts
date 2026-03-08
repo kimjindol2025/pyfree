@@ -634,9 +634,11 @@ export class IRCompiler {
     const loopStartOffset = this.builder.getCurrentOffset();
     this.loopStack.push(loopStartOffset);
 
+    // ✅ 버그 수정 (2026-03-09): 1000회 하드코딩 → 100회로 제한
+    // TODO: 런타임 루프로 완전히 개선 필요 (FOR_ITER opcode 구현)
     // 각 요소에 대해 반복
-    // 간단한 구현: 배열이라고 가정
-    for (let i = 0; i < 1000; i++) {
+    // 간단한 구현: 배열이라고 가정 (최대 100개 요소)
+    for (let i = 0; i < 100; i++) {
       const itemReg = this.allocRegister();
       const idxConstIdx = this.builder.addConstant(i);
       this.builder.emit(Opcode.LOAD_CONST, [itemReg, idxConstIdx]);
