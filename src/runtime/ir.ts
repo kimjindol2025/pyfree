@@ -668,23 +668,36 @@ export class IRCompiler {
 
   /**
    * While 루프 컴파일
+   * ✅ 버그 수정 (2026-03-09): 조건을 매 반복마다 재평가
    */
   private compileWhileLoop(stmt: any): void {
-    const loopStartOffset = this.builder.getCurrentOffset();
-    this.loopStack.push(loopStartOffset);
+    // 루프 설정
+    this.builder.emit(Opcode.SETUP_LOOP, [0, 0]);
+    const setupLoopIdx = this.builder.code.length - 1;
 
+    // 조건 체크 레이블
+    const condCheckOffset = this.builder.getCurrentOffset();
+    this.loopStack.push(condCheckOffset);
+
+    // 조건 평가
     const condReg = this.compileExpression(stmt.condition);
     const jumpIfFalseIdx = this.builder.getCurrentOffset();
     this.builder.emit(Opcode.JUMP_IF_FALSE, [condReg, 0]);
 
+    // 루프 본문 실행
     for (const s of stmt.body) {
       this.compileStatement(s);
     }
 
-    const jumpBackIdx = this.builder.getCurrentOffset();
-    this.builder.emit(Opcode.JUMP, [loopStartOffset]);
+    // 조건 체크로 점프 (중요!)
+    this.builder.emit(Opcode.JUMP, [condCheckOffset]);
 
-    this.builder.code[jumpIfFalseIdx].args[1] = this.builder.getCurrentOffset();
+    // 루프 끝 레이블
+    const loopEndOffset = this.builder.getCurrentOffset();
+    this.builder.code[jumpIfFalseIdx].args[1] = loopEndOffset;
+    this.builder.code[setupLoopIdx].args[1] = loopEndOffset;
+
+    this.builder.emit(Opcode.POP_LOOP, []);
 
     this.loopStack.pop();
     this.freeRegister(condReg);
