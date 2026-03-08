@@ -1,0 +1,188 @@
+#!pyfree:mode=static
+"""
+PyFree Example 8: Self-Monitoring
+@monitor 데코레이터로 자동 계측
+"""
+
+import time
+import asyncio
+import json
+
+# 메트릭 저장소 (간단한 구현)
+METRICS: dict[str, list[dict]] = {}
+
+def store_metric(func_name: str, latency_ms: float, memory_delta: int):
+    """메트릭 저장"""
+    if func_name not in METRICS:
+        METRICS[func_name] = []
+
+    METRICS[func_name].append({
+        "timestamp": time.time(),
+        "latency_ms": latency_ms,
+        "memory_delta": memory_delta
+    })
+
+
+@monitor(
+    latency=True,
+    memory=True,
+    alert_threshold_ms=100,
+    sample_rate=1.0
+)
+def cpu_intensive_task(n: int) -> int:
+    """
+    CPU 집약적 작업
+    @monitor가 자동으로 다음을 측정:
+    - 함수 실행 시간 (latency)
+    - 메모리 할당량 (memory)
+    - 임계값 초과 시 알림
+    """
+    result = 0
+    for i in range(n):
+        result += i * i
+    return result
+
+
+@monitor(
+    latency=True,
+    memory=True,
+    alert_threshold_ms=500,
+    sample_rate=0.1  # 10% 샘플링 (프로덕션)
+)
+async def fetch_and_process(urls: list[str]) -> dict:
+    """
+    네트워크 + 처리 작업
+    샘플링으로 프로덕션 오버헤드 최소화
+    """
+    from pyfree.net import http_get
+
+    results = []
+
+    for url in urls:
+        try:
+            response = await http_get(url, timeout=5)
+
+            if response.status == 200:
+                data = response.json()
+                results.append({
+                    "url": url,
+                    "status": "success",
+                    "size": len(str(data))
+                })
+            else:
+                results.append({
+                    "url": url,
+                    "status": "error",
+                    "code": response.status
+                })
+        except Exception as e:
+            results.append({
+                "url": url,
+                "status": "error",
+                "error": str(e)
+            })
+
+        # 요청 간 대기
+        await asyncio.sleep(0.1)
+
+    return {
+        "total_requests": len(urls),
+        "successful": len([r for r in results if r["status"] == "success"]),
+        "failed": len([r for r in results if r["status"] == "error"]),
+        "details": results
+    }
+
+
+@monitor(
+    latency=True,
+    memory=False,  # 메모리는 추적 안 함
+    alert_threshold_ms=50
+)
+def fast_operation(data: list[int]) -> int:
+    """
+    빠른 연산
+    레이턴시만 모니터링
+    """
+    return sum(data)
+
+
+def print_metrics(func_name: str):
+    """수집된 메트릭 출력"""
+    if func_name not in METRICS:
+        print(f"❌ {func_name}: 메트릭 없음")
+        return
+
+    metrics = METRICS[func_name]
+
+    if not metrics:
+        print(f"❌ {func_name}: 데이터 없음")
+        return
+
+    latencies = [m["latency_ms"] for m in metrics]
+    memory_deltas = [m["memory_delta"] for m in metrics]
+
+    print(f"📊 {func_name}:")
+    print(f"  샘플 수: {len(metrics)}")
+    print(f"  레이턴시:")
+    print(f"    최소: {min(latencies):.2f}ms")
+    print(f"    평균: {sum(latencies) / len(latencies):.2f}ms")
+    print(f"    최대: {max(latencies):.2f}ms")
+    print(f"    P95: {sorted(latencies)[int(len(latencies) * 0.95)]:.2f}ms")
+
+    if memory_deltas:
+        print(f"  메모리 증감:")
+        print(f"    최소: {min(memory_deltas)} bytes")
+        print(f"    평균: {sum(memory_deltas) // len(memory_deltas)} bytes")
+        print(f"    최대: {max(memory_deltas)} bytes")
+
+
+async def main():
+    print("=== PyFree Self-Monitoring 예제 ===")
+    print()
+
+    # 테스트 1: CPU 집약적 작업
+    print("⏱️ CPU 집약적 작업 실행...")
+    for _ in range(5):
+        result = cpu_intensive_task(1000)
+        # @monitor가 자동으로 메트릭 수집
+
+    print_metrics("cpu_intensive_task")
+    print()
+
+    # 테스트 2: 빠른 연산
+    print("⚡ 빠른 연산 실행...")
+    for _ in range(10):
+        result = fast_operation([1, 2, 3, 4, 5])
+
+    print_metrics("fast_operation")
+    print()
+
+    # 테스트 3: 네트워크 작업 (실제 환경에서)
+    print("🌐 네트워크 작업 시뮬레이션...")
+    print("  (실제 요청 대신 시뮬레이션)")
+
+    # 샘플 결과
+    sample_result = {
+        "total_requests": 3,
+        "successful": 3,
+        "failed": 0,
+        "details": [
+            {"url": "https://api.example.com/1", "status": "success", "size": 256},
+            {"url": "https://api.example.com/2", "status": "success", "size": 512},
+            {"url": "https://api.example.com/3", "status": "success", "size": 128},
+        ]
+    }
+
+    print("✓ 결과:")
+    print(f"  성공: {sample_result['successful']}/{sample_result['total_requests']}")
+    print(f"  실패: {sample_result['failed']}/{sample_result['total_requests']}")
+
+    print()
+    print("💡 주의사항:")
+    print("  - @monitor는 TSC 기반 고정밀 계측 (오버헤드 ~50ns)")
+    print("  - sample_rate로 프로덕션 성능 영향 제어")
+    print("  - alert_threshold_ms 초과 시 외부 모니터링 시스템으로 전송")
+    print("  - 메트릭은 SPSC 링 버퍼에 저장되어 비동기 전송")
+
+if __name__ == "__main__":
+    asyncio.run(main())

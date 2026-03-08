@@ -1,0 +1,46 @@
+#!pyfree:mode=static
+"""
+PyFree Example 2: Result<T,E> Pattern Matching
+FreeLang의 결과 타입과 Python의 comprehension 결합
+"""
+
+def parse_numbers(raw_strings: list[str]) -> Result[list[int], str]:
+    """
+    문자열 목록을 정수 목록으로 파싱
+    - 성공: Ok(list[int])
+    - 실패: Err(str)
+    """
+    parsed = []
+
+    for s in raw_strings:
+        if s.isdigit():
+            parsed.append(int(s))
+
+    if not parsed:
+        return Err("유효한 숫자를 찾을 수 없습니다")
+
+    return Ok(parsed)
+
+def sum_numbers(data: Result[list[int], str]) -> None:
+    """Result를 match로 처리"""
+    match data:
+        Ok(numbers):
+            total = sum(numbers)
+            print(f"✓ 파싱 성공: {numbers}")
+            print(f"  합계: {total}")
+        Err(msg):
+            print(f"✗ 파싱 실패: {msg}")
+
+def main():
+    # 테스트 1: 정상
+    result1 = parse_numbers(["1", "hello", "3", "world", "5"])
+    sum_numbers(result1)
+
+    print()
+
+    # 테스트 2: 실패
+    result2 = parse_numbers(["apple", "banana", "cherry"])
+    sum_numbers(result2)
+
+if __name__ == "__main__":
+    main()

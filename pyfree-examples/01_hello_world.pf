@@ -1,0 +1,16 @@
+#!pyfree:mode=gradual
+"""
+PyFree Example 1: Hello World
+가장 간단한 PyFree 프로그램
+"""
+
+def greet(name: str) -> str:
+    """사용자를 환영하는 함수"""
+    return f"Hello, {name}!"
+
+def main():
+    message = greet("PyFree")
+    print(message)
+
+if __name__ == "__main__":
+    main()

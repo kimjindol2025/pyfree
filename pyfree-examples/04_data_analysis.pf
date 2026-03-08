@@ -1,0 +1,82 @@
+#!pyfree:mode=static
+"""
+PyFree Example 4: Data Analysis
+pandas + numpy를 활용한 데이터 분석
+"""
+
+import pandas as pd
+import numpy as np
+
+def load_sales_data(filepath: str) -> Result[pd.DataFrame, str]:
+    """
+    CSV 파일에서 판매 데이터 로드
+    """
+    try:
+        df = pd.read_csv(filepath)
+        return Ok(df)
+    except FileNotFoundError:
+        return Err(f"파일을 찾을 수 없습니다: {filepath}")
+    except Exception as e:
+        return Err(f"로드 실패: {str(e)}")
+
+def analyze_sales(df: pd.DataFrame) -> dict:
+    """판매 데이터 분석"""
+    stats = {
+        "total_rows": len(df),
+        "total_sales": float(df["amount"].sum()),
+        "average_sale": float(df["amount"].mean()),
+        "median_sale": float(df["amount"].median()),
+        "max_sale": float(df["amount"].max()),
+        "min_sale": float(df["amount"].min()),
+        "std_dev": float(df["amount"].std()),
+    }
+    return stats
+
+def filter_by_date_range(df: pd.DataFrame, start_date: str, end_date: str) -> pd.DataFrame:
+    """날짜 범위로 필터링"""
+    df["date"] = pd.to_datetime(df["date"])
+    mask = (df["date"] >= start_date) & (df["date"] <= end_date)
+    return df[mask]
+
+def group_by_category(df: pd.DataFrame) -> dict:
+    """카테고리별 합계 계산"""
+    grouped = df.groupby("category")["amount"].sum()
+    return grouped.to_dict()
+
+def main():
+    # 샘플 데이터 생성
+    sample_data = pd.DataFrame({
+        "date": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],
+        "category": ["A", "B", "A", "C", "B"],
+        "amount": [100.0, 150.0, 200.0, 75.0, 125.0],
+    })
+
+    # 분석 실행
+    print("=== 판매 데이터 분석 ===")
+    print()
+
+    stats = analyze_sales(sample_data)
+    print("📊 전체 통계:")
+    print(f"  총 행: {stats['total_rows']}")
+    print(f"  합계: ${stats['total_sales']:.2f}")
+    print(f"  평균: ${stats['average_sale']:.2f}")
+    print(f"  중앙값: ${stats['median_sale']:.2f}")
+    print(f"  최대: ${stats['max_sale']:.2f}")
+    print(f"  최소: ${stats['min_sale']:.2f}")
+    print(f"  표준편차: ${stats['std_dev']:.2f}")
+    print()
+
+    category_totals = group_by_category(sample_data)
+    print("📈 카테고리별 합계:")
+    for cat, total in category_totals.items():
+        print(f"  {cat}: ${total:.2f}")
+    print()
+
+    # 필터링
+    filtered = filter_by_date_range(sample_data, "2024-01-02", "2024-01-04")
+    print(f"📅 필터된 데이터 (2024-01-02 ~ 2024-01-04): {len(filtered)}행")
+    for _, row in filtered.iterrows():
+        print(f"  {row['date']}: {row['category']} - ${row['amount']:.2f}")
+
+if __name__ == "__main__":
+    main()

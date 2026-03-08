@@ -1,0 +1,212 @@
+#!pyfree:mode=static
+"""
+PyFree Example 7: Compile-Time ORM
+데이터베이스 테이블을 클래스로 정의
+"""
+
+from pyfree.db import query, insert, update, delete
+from dataclasses import dataclass
+from datetime import datetime
+import re
+
+# 컴파일 타임에 SQL 스키마 생성 & 검증
+@db_table("users")
+@dataclass
+class User:
+    @db_id                                      # PRIMARY KEY
+    @db_auto_increment                          # AUTO INCREMENT
+    id: int
+
+    @db_column(type="varchar(255)", nullable=False)
+    @check(min_len=1, max_len=100)
+    name: str
+
+    @db_column(type="varchar(255)", unique=True)
+    @check(pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")  # 이메일 패턴
+    email: str
+
+    @db_column(type="text", nullable=True)
+    bio: str | None = None
+
+    @db_column(type="timestamp", default="NOW()")
+    created_at: datetime = None
+
+    @db_column(type="timestamp", nullable=True)
+    last_login: datetime | None = None
+
+
+@db_table("products")
+@dataclass
+class Product:
+    @db_id
+    @db_auto_increment
+    id: int
+
+    @db_column(type="varchar(255)", nullable=False)
+    @check(min_len=1, max_len=200)
+    name: str
+
+    @db_column(type="text", nullable=True)
+    description: str | None = None
+
+    @db_column(type="decimal(10, 2)", nullable=False)
+    @check(min_val=0.01, max_val=999999.99)
+    price: float
+
+    @db_column(type="integer", default=0)
+    @check(min_val=0, max_val=1000000)
+    stock: int = 0
+
+    @db_column(type="varchar(50)", nullable=False)
+    @check(enum=["available", "discontinued", "coming_soon"])
+    status: str = "available"
+
+
+async def create_user(name: str, email: str, bio: str = None) -> Result[User, str]:
+    """새 사용자 생성"""
+    # @check 검증이 컴파일 타임에 추가됨
+    match await insert("users", {
+        "name": name,
+        "email": email,
+        "bio": bio
+    }):
+        Ok(result):
+            user = User(
+                id=result.last_insert_id,
+                name=name,
+                email=email,
+                bio=bio,
+                created_at=datetime.now()
+            )
+            return Ok(user)
+        Err(e):
+            return Err(f"사용자 생성 실패: {str(e)}")
+
+
+async def find_user_by_email(email: str) -> Result[User | None, str]:
+    """이메일로 사용자 찾기"""
+    match await query("SELECT * FROM users WHERE email = ?", [email]):
+        Ok(rows):
+            if not rows:
+                return Ok(None)
+
+            row = rows[0]
+            user = User(
+                id=row["id"],
+                name=row["name"],
+                email=row["email"],
+                bio=row.get("bio"),
+                created_at=row["created_at"],
+                last_login=row.get("last_login")
+            )
+            return Ok(user)
+        Err(e):
+            return Err(f"조회 실패: {str(e)}")
+
+
+async def update_user_profile(user_id: int, name: str, bio: str) -> Result[bool, str]:
+    """사용자 프로필 업데이트"""
+    match await update("users", user_id, {
+        "name": name,
+        "bio": bio
+    }):
+        Ok(affected_rows):
+            return Ok(affected_rows > 0)
+        Err(e):
+            return Err(f"업데이트 실패: {str(e)}")
+
+
+async def delete_user(user_id: int) -> Result[bool, str]:
+    """사용자 삭제"""
+    match await delete("users", user_id):
+        Ok(affected_rows):
+            return Ok(affected_rows > 0)
+        Err(e):
+            return Err(f"삭제 실패: {str(e)}")
+
+
+async def get_product_by_id(product_id: int) -> Result[Product | None, str]:
+    """상품 조회"""
+    match await query("SELECT * FROM products WHERE id = ?", [product_id]):
+        Ok(rows):
+            if not rows:
+                return Ok(None)
+
+            row = rows[0]
+            product = Product(
+                id=row["id"],
+                name=row["name"],
+                description=row.get("description"),
+                price=row["price"],
+                stock=row.get("stock", 0),
+                status=row.get("status", "available")
+            )
+            return Ok(product)
+        Err(e):
+            return Err(f"상품 조회 실패: {str(e)}")
+
+
+async def update_product_stock(product_id: int, new_stock: int) -> Result[bool, str]:
+    """상품 재고 업데이트"""
+    if new_stock < 0 or new_stock > 1000000:
+        return Err("재고 범위 초과: 0 ~ 1000000")
+
+    match await update("products", product_id, {"stock": new_stock}):
+        Ok(affected_rows):
+            return Ok(affected_rows > 0)
+        Err(e):
+            return Err(f"재고 업데이트 실패: {str(e)}")
+
+
+async def main():
+    print("=== PyFree ORM 예제 ===")
+    print()
+
+    # 사용자 생성
+    print("👤 사용자 생성 중...")
+    match await create_user("Alice", "alice@example.com", "소프트웨어 엔지니어"):
+        Ok(user):
+            print(f"✓ 생성 완료: {user.name} ({user.email})")
+        Err(msg):
+            print(f"✗ {msg}")
+
+    print()
+
+    # 사용자 조회
+    print("🔍 사용자 조회 중...")
+    match await find_user_by_email("alice@example.com"):
+        Ok(user):
+            if user:
+                print(f"✓ 찾음: {user.name}")
+                print(f"  이메일: {user.email}")
+                print(f"  소개: {user.bio}")
+            else:
+                print("✓ 사용자를 찾을 수 없습니다")
+        Err(msg):
+            print(f"✗ {msg}")
+
+    print()
+
+    # 상품 조회
+    print("🛍️ 상품 조회 중...")
+    match await get_product_by_id(1):
+        Ok(product):
+            if product:
+                print(f"✓ 상품: {product.name}")
+                print(f"  가격: ${product.price:.2f}")
+                print(f"  재고: {product.stock}개")
+                print(f"  상태: {product.status}")
+            else:
+                print("✓ 상품을 찾을 수 없습니다")
+        Err(msg):
+            print(f"✗ {msg}")
+
+    print()
+    print("💡 주의사항:")
+    print("  - @db_table이 컴파일 타임에 SQL 스키마 생성")
+    print("  - @check가 자동 검증 함수로 컴파일됨")
+    print("  - @db_column 속성이 타입과 일치하는지 검증")
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())

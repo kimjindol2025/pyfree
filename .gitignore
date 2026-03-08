@@ -1,0 +1,45 @@
+# PyFree .gitignore
+
+# 빌드 산출물
+build/
+dist/
+*.o
+*.so
+*.dylib
+*.exe
+*.out
+
+# 네이티브 바이너리
+pyfree
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.Python
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 테스트
+.pytest_cache/
+coverage/
+*.lcov
+
+# 로그
+*.log
+debug-*.js
+test-*.fl
+
+# 임시 파일
+tmp/
+temp/
+.tmp/

@@ -1,0 +1,97 @@
+#!pyfree:mode=static
+"""
+PyFree Example 5: Async/Await
+비동기 프로그래밍 + Promise 결합
+"""
+
+import asyncio
+from pyfree.net import http_get
+
+async def fetch_json(url: str) -> Result[dict, str]:
+    """URL에서 JSON 데이터 가져오기"""
+    try:
+        response = await http_get(url)
+        if response.status == 200:
+            data = response.json()
+            return Ok(data)
+        else:
+            return Err(f"HTTP {response.status}")
+    except Exception as e:
+        return Err(f"요청 실패: {str(e)}")
+
+async def fetch_multiple(urls: list[str]) -> Result[list[dict], str]:
+    """여러 URL 병렬 처리"""
+    # Promise.all로 동시 실행
+    tasks = [fetch_json(url) for url in urls]
+
+    results = await Promise.all(tasks)
+
+    # 에러 체크
+    errors = [
+        (i, r) for i, r in enumerate(results)
+        if isinstance(r, Err)
+    ]
+
+    if errors:
+        error_msg = ", ".join([f"URL {i}: {r.unwrap_err()}" for i, r in errors])
+        return Err(f"일부 요청 실패: {error_msg}")
+
+    # 모든 데이터 추출
+    data = [r.unwrap() for r in results if isinstance(r, Ok)]
+    return Ok(data)
+
+async def rate_limited_fetch(urls: list[str], delay_ms: int = 1000) -> Result[list[dict], str]:
+    """지연을 두고 순차적으로 가져오기 (Rate Limiting)"""
+    results = []
+
+    for i, url in enumerate(urls):
+        print(f"[{i + 1}/{len(urls)}] {url} 요청 중...")
+
+        match await fetch_json(url):
+            Ok(data):
+                results.append(data)
+                print(f"  ✓ 성공")
+            Err(e):
+                print(f"  ✗ 실패: {e}")
+                return Err(f"{url}에서 실패")
+
+        # 다음 요청 전 대기
+        if i < len(urls) - 1:
+            await asyncio.sleep(delay_ms / 1000.0)
+
+    return Ok(results)
+
+async def main():
+    # 테스트 URL들 (실제 환경에서는 유효한 URL 사용)
+    urls = [
+        "https://jsonplaceholder.typicode.com/users/1",
+        "https://jsonplaceholder.typicode.com/posts/1",
+        "https://jsonplaceholder.typicode.com/comments/1",
+    ]
+
+    print("=== 비동기 다중 요청 ===")
+    print()
+
+    # 방법 1: 병렬 실행 (빠름)
+    print("📡 병렬 실행 (Promise.all)...")
+    match await fetch_multiple(urls):
+        Ok(data):
+            print(f"✓ 성공: {len(data)}개 응답 수신")
+            for i, item in enumerate(data[:2]):  # 처음 2개만 출력
+                print(f"  [{i}]: {item}")
+        Err(msg):
+            print(f"✗ 실패: {msg}")
+
+    print()
+
+    # 방법 2: 순차 실행 with Rate Limiting (안전함)
+    print("⏱️  순차 실행 (Rate Limiting)...")
+    match await rate_limited_fetch(urls, delay_ms=500):
+        Ok(data):
+            print(f"✓ 성공: {len(data)}개 응답 수신")
+        Err(msg):
+            print(f"✗ 실패: {msg}")
+
+if __name__ == "__main__":
+    print("PyFree 비동기 예제 시작...")
+    asyncio.run(main())

@@ -1,0 +1,110 @@
+#!pyfree:mode=static
+"""
+PyFree Example 3: Web API Server
+async/await + Result + 웹 라우팅
+"""
+
+from pyfree.web import App, route, json_response
+from pyfree.data import DataFrame
+from dataclasses import dataclass
+import json
+
+@dataclass
+class User:
+    id: int
+    name: str
+    email: str
+
+# 메모리 내 사용자 저장소 (프로토타입)
+USERS: dict[int, User] = {
+    1: User(1, "Alice", "alice@example.com"),
+    2: User(2, "Bob", "bob@example.com"),
+    3: User(3, "Charlie", "charlie@example.com"),
+}
+
+app = App()
+
+@app.route("/users", method="GET")
+async def list_users(req) -> Result[dict, str]:
+    """모든 사용자 반환"""
+    users = [{"id": u.id, "name": u.name, "email": u.email} for u in USERS.values()]
+    return Ok({
+        "status": "success",
+        "count": len(users),
+        "data": users
+    })
+
+@app.route("/users/:id", method="GET")
+async def get_user(req, id: int) -> Result[dict, str]:
+    """특정 사용자 조회"""
+    if id not in USERS:
+        return Err(f"사용자 {id}를 찾을 수 없습니다")
+
+    user = USERS[id]
+    return Ok({
+        "status": "success",
+        "data": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email
+        }
+    })
+
+@app.route("/users", method="POST")
+async def create_user(req) -> Result[dict, str]:
+    """새 사용자 생성"""
+    try:
+        body = await req.json()
+        name = body.get("name", "")
+        email = body.get("email", "")
+
+        if not name or not email:
+            return Err("name과 email은 필수입니다")
+
+        # ID 자동 생성
+        new_id = max(USERS.keys()) + 1 if USERS else 1
+        user = User(new_id, name, email)
+        USERS[new_id] = user
+
+        return Ok({
+            "status": "created",
+            "data": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email
+            }
+        })
+    except Exception as e:
+        return Err(f"생성 실패: {str(e)}")
+
+@app.route("/users/:id", method="DELETE")
+async def delete_user(req, id: int) -> Result[dict, str]:
+    """사용자 삭제"""
+    if id not in USERS:
+        return Err(f"사용자 {id}를 찾을 수 없습니다")
+
+    deleted_user = USERS.pop(id)
+    return Ok({
+        "status": "deleted",
+        "data": {
+            "id": deleted_user.id,
+            "name": deleted_user.name,
+            "email": deleted_user.email
+        }
+    })
+
+def main():
+    print("PyFree API 서버 시작...")
+    print("Listen: http://localhost:8080")
+    print("")
+    print("사용 가능한 엔드포인트:")
+    print("  GET    /users          - 모든 사용자 조회")
+    print("  GET    /users/:id      - 특정 사용자 조회")
+    print("  POST   /users          - 새 사용자 생성")
+    print("  DELETE /users/:id      - 사용자 삭제")
+    print("")
+
+    app.listen(8080)
+
+if __name__ == "__main__":
+    main()
