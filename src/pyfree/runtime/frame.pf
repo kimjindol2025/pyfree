@@ -1,0 +1,95 @@
+# PyFree Runtime: Execution Frame
+# 함수 호출 프레임 정의
+
+from runtime.instruction import Instruction, IRFunction
+
+
+class Frame:
+    """함수 호출 프레임
+
+    각 함수 호출마다 생성되며, 프로그램 카운터, 레지스터, 로컬 변수 등을 관리합니다.
+    """
+
+    def __init__(self, code: list = None, function: IRFunction = None, param_count: int = 0):
+        self.function = function
+        self.code = code if code is not None else []
+        self.pc = 0                     # Program Counter
+        self.registers = []             # 256개 레지스터
+        self.locals = {}                # 지역 변수 (로컬 심볼 테이블)
+        self.return_value = None        # 반환값
+
+        # 256개 레지스터 초기화
+        for i in range(256):
+            self.registers.append(None)
+
+    def set_register(self, index: int, value):
+        """레지스터에 값 설정"""
+        if index < 0 or index >= 256:
+            raise Exception(f"Invalid register index: {index}")
+        self.registers[index] = value
+
+    def get_register(self, index: int):
+        """레지스터에서 값 읽기"""
+        if index < 0 or index >= 256:
+            raise Exception(f"Invalid register index: {index}")
+        return self.registers[index]
+
+    def set_local(self, name: str, value):
+        """지역 변수 설정"""
+        self.locals[name] = value
+
+    def get_local(self, name: str):
+        """지역 변수 읽기"""
+        if name in self.locals:
+            return self.locals[name]
+        return None
+
+    def next_instruction(self) -> Instruction:
+        """다음 명령어 읽기"""
+        if self.pc >= len(self.code):
+            return None
+        instr = self.code[self.pc]
+        self.pc = self.pc + 1
+        return instr
+
+    def has_next(self) -> bool:
+        """다음 명령어가 있는지 확인"""
+        return self.pc < len(self.code)
+
+    def peek_instruction(self) -> Instruction:
+        """PC를 이동하지 않고 현재 명령어 확인"""
+        if self.pc >= len(self.code):
+            return None
+        return self.code[self.pc]
+
+    def jump(self, offset: int):
+        """PC를 특정 오프셋으로 설정"""
+        if offset < 0 or offset > len(self.code):
+            raise Exception(f"Invalid jump offset: {offset}")
+        self.pc = offset
+
+    def __str__(self) -> str:
+        func_name = self.function.name if self.function is not None else "main"
+        return f"Frame({func_name}, pc={self.pc}/{len(self.code)}, locals={len(self.locals)})"
+
+
+class LoopContext:
+    """루프 컨텍스트 (break/continue 관리)"""
+
+    def __init__(self, start_offset: int = 0, end_offset: int = 0):
+        self.start_offset = start_offset
+        self.end_offset = end_offset
+
+    def __str__(self) -> str:
+        return f"LoopContext(start={self.start_offset}, end={self.end_offset})"
+
+
+class ExceptionHandler:
+    """예외 핸들러"""
+
+    def __init__(self, offset: int = 0, end_offset: int = None):
+        self.offset = offset
+        self.end_offset = end_offset
+
+    def __str__(self) -> str:
+        return f"ExceptionHandler(offset={self.offset}, end={self.end_offset})"

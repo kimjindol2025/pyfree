@@ -1,0 +1,408 @@
+# PyFree Runtime: Virtual Machine
+# 47개 opcode를 실행하는 가상머신
+
+from runtime.instruction import Instruction, Opcode, IRProgram, IRFunction
+from runtime.frame import Frame, LoopContext, ExceptionHandler
+
+
+class VM:
+    """PyFree 가상머신
+
+    레지스터 머신 기반의 VM으로 IR을 직접 실행합니다.
+    - 256개 레지스터 (0-199: 일반, 200-255: 함수 호출)
+    - 콜 스택: 함수 호출 관리
+    - 루프 스택: break/continue 관리
+    """
+
+    def __init__(self, program: IRProgram = None):
+        self.program = program if program is not None else IRProgram()
+        self.registers = []             # 글로벌 레지스터
+        self.frame_stack = []           # 콜 스택
+        self.loop_stack = []            # 루프 스택
+        self.handler_stack = []         # 예외 핸들러 스택
+        self.globals = {}               # 전역 변수
+        self.output = []                # 출력 버퍼
+        self.halted = False             # VM 종료 상태
+
+        # 256개 레지스터 초기화
+        for i in range(256):
+            self.registers.append(None)
+
+        # 프로그램의 전역 변수 로드
+        if program is not None:
+            for key in program.globals:
+                self.globals[key] = program.globals[key]
+
+        # 초기 프레임 생성
+        if program is not None:
+            initial_frame = Frame(program.code, None, 0)
+            self.frame_stack.append(initial_frame)
+
+    def execute(self) -> None:
+        """VM 메인 루프"""
+        while not self.halted and len(self.frame_stack) > 0:
+            frame = self.frame_stack[len(self.frame_stack) - 1]
+
+            if not frame.has_next():
+                self.frame_stack.pop()
+                continue
+
+            instr = frame.next_instruction()
+            if instr is None:
+                break
+
+            self._execute_instruction(instr, frame)
+
+    def _execute_instruction(self, instr: Instruction, frame: Frame) -> None:
+        """명령어 실행"""
+        op = instr.opcode
+        args = instr.args
+
+        # 인자 추출 및 타입 변환
+        a = args[0] if len(args) > 0 else 0
+        b = args[1] if len(args) > 1 else 0
+        c = args[2] if len(args) > 2 else 0
+
+        a_num = a if isinstance(a, int) else 0
+        b_num = b if isinstance(b, int) else 0
+        c_num = c if isinstance(c, int) else 0
+
+        # Opcode별 실행
+        if op == Opcode.LOAD_CONST:
+            frame.set_register(a_num, self.program.constants[b_num])
+
+        elif op == Opcode.LOAD_GLOBAL:
+            var_name = b if isinstance(b, str) else str(b)
+            frame.set_register(a_num, self.globals.get(var_name, None))
+
+        elif op == Opcode.LOAD_FAST:
+            var_name = b if isinstance(b, str) else str(b)
+            value = frame.get_local(var_name)
+            frame.set_register(a_num, value)
+
+        elif op == Opcode.LOAD_NONE:
+            frame.set_register(a_num, None)
+
+        elif op == Opcode.LOAD_TRUE:
+            frame.set_register(a_num, True)
+
+        elif op == Opcode.LOAD_FALSE:
+            frame.set_register(a_num, False)
+
+        elif op == Opcode.STORE_GLOBAL:
+            var_name = a if isinstance(a, str) else str(a)
+            value = frame.get_register(b_num)
+            self.globals[var_name] = value
+
+        elif op == Opcode.STORE_FAST:
+            var_name = a if isinstance(a, str) else str(a)
+            value = frame.get_register(b_num)
+            frame.set_local(var_name, value)
+
+        # 산술 연산
+        elif op == Opcode.ADD:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left + right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.SUB:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left - right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.MUL:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left * right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.DIV:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            if right == 0:
+                raise Exception("Division by zero")
+            result = left / right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.MOD:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            if right == 0:
+                raise Exception("Division by zero")
+            result = left % right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.POW:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left ** right
+            frame.set_register(a_num, result)
+
+        # 단항 연산
+        elif op == Opcode.NEG:
+            value = frame.get_register(b_num)
+            result = -value
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.NOT:
+            value = frame.get_register(b_num)
+            result = not value
+            frame.set_register(a_num, result)
+
+        # 비교 연산
+        elif op == Opcode.EQ:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left == right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.NE:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left != right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.LT:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left < right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.GT:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left > right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.LE:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left <= right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.GE:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left >= right
+            frame.set_register(a_num, result)
+
+        # 논리 연산
+        elif op == Opcode.AND:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left and right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.OR:
+            left = frame.get_register(b_num)
+            right = frame.get_register(c_num)
+            result = left or right
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.IN:
+            value = frame.get_register(b_num)
+            container = frame.get_register(c_num)
+            result = self._check_in(value, container)
+            frame.set_register(a_num, result)
+
+        # 제어 흐름
+        elif op == Opcode.JUMP:
+            frame.jump(b_num)
+
+        elif op == Opcode.JUMP_IF_FALSE:
+            condition = frame.get_register(a_num)
+            if not condition:
+                frame.jump(b_num)
+
+        elif op == Opcode.JUMP_IF_TRUE:
+            condition = frame.get_register(a_num)
+            if condition:
+                frame.jump(b_num)
+
+        # 함수
+        elif op == Opcode.CALL:
+            self._call_function(frame, a_num, b_num, c_num)
+
+        elif op == Opcode.RETURN:
+            value = frame.get_register(a_num)
+            self.frame_stack.pop()
+            if len(self.frame_stack) > 0:
+                caller = self.frame_stack[len(self.frame_stack) - 1]
+                # 반환값을 r0에 저장
+                caller.set_register(0, value)
+
+        elif op == Opcode.MAKE_FUNCTION:
+            # 함수 객체 생성 (단순히 객체 저장)
+            func = self.program.functions.get(str(b), None)
+            frame.set_register(a_num, func)
+
+        # 컨테이너
+        elif op == Opcode.BUILD_LIST:
+            result = []
+            count = b_num
+            for i in range(count):
+                result.append(frame.get_register(a_num + 1 + i))
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.BUILD_DICT:
+            result = {}
+            count = b_num
+            for i in range(count):
+                key = str(frame.get_register(a_num + 1 + 2 * i))
+                value = frame.get_register(a_num + 1 + 2 * i + 1)
+                result[key] = value
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.BUILD_TUPLE:
+            result = []
+            count = b_num
+            for i in range(count):
+                result.append(frame.get_register(a_num + 1 + i))
+            # 튜플로 변환 (PyFree에서는 리스트로 표현)
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.INDEX_GET:
+            container = frame.get_register(b_num)
+            index = frame.get_register(c_num)
+            if isinstance(container, list) or isinstance(container, str):
+                result = container[index]
+            elif isinstance(container, dict):
+                result = container.get(str(index), None)
+            else:
+                result = None
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.INDEX_SET:
+            container = frame.get_register(a_num)
+            index = frame.get_register(b_num)
+            value = frame.get_register(c_num)
+            if isinstance(container, list):
+                container[index] = value
+            elif isinstance(container, dict):
+                container[str(index)] = value
+
+        elif op == Opcode.ATTR_GET:
+            obj = frame.get_register(b_num)
+            attr_name = c if isinstance(c, str) else str(c)
+            if isinstance(obj, dict):
+                result = obj.get(attr_name, None)
+            else:
+                result = None
+            frame.set_register(a_num, result)
+
+        elif op == Opcode.ATTR_SET:
+            obj = frame.get_register(a_num)
+            attr_name = c if isinstance(c, str) else str(c)
+            value = frame.get_register(b_num)
+            if isinstance(obj, dict):
+                obj[attr_name] = value
+
+        # 루프
+        elif op == Opcode.SETUP_LOOP:
+            loop_ctx = LoopContext(frame.pc, b_num)
+            self.loop_stack.append(loop_ctx)
+
+        elif op == Opcode.POP_LOOP:
+            if len(self.loop_stack) > 0:
+                self.loop_stack.pop()
+
+        elif op == Opcode.BREAK:
+            if len(self.loop_stack) > 0:
+                loop_ctx = self.loop_stack[len(self.loop_stack) - 1]
+                frame.jump(loop_ctx.end_offset)
+
+        elif op == Opcode.CONTINUE:
+            if len(self.loop_stack) > 0:
+                loop_ctx = self.loop_stack[len(self.loop_stack) - 1]
+                frame.jump(loop_ctx.start_offset)
+
+        # 예외 처리
+        elif op == Opcode.SETUP_TRY:
+            handler = ExceptionHandler(frame.pc, b_num)
+            self.handler_stack.append(handler)
+
+        elif op == Opcode.POP_TRY:
+            if len(self.handler_stack) > 0:
+                self.handler_stack.pop()
+
+        elif op == Opcode.RAISE:
+            error_obj = frame.get_register(a_num)
+            raise Exception(str(error_obj))
+
+        # 기타
+        elif op == Opcode.NOP:
+            pass
+
+        elif op == Opcode.PRINT:
+            value = frame.get_register(a_num)
+            self.output.append(str(value))
+
+        elif op == Opcode.POP_TOP:
+            pass
+
+        elif op == Opcode.DUP:
+            # 스택 기반이 아니므로 현재 구현에서 사용 안 함
+            pass
+
+    def _call_function(self, frame: Frame, dst: int, func_idx: int, arg_count: int) -> None:
+        """함수 호출 처리"""
+        func = frame.get_register(func_idx)
+
+        # 네이티브 함수 (print, len, range 등)
+        if callable(func):
+            args = []
+            for i in range(arg_count):
+                args.append(frame.get_register(dst + 1 + i))
+            try:
+                result = func(*args)
+                frame.set_register(dst, result)
+            except Exception as e:
+                raise Exception(f"Function call error: {e}")
+            return
+
+        # IR 함수
+        if isinstance(func, IRFunction):
+            new_frame = Frame(func.code, func, func.param_count)
+
+            # 파라미터 전달
+            for i in range(arg_count):
+                if i < func.param_count:
+                    param_name = func.param_names[i]
+                    arg_value = frame.get_register(dst + 1 + i)
+                    new_frame.set_local(param_name, arg_value)
+
+            self.frame_stack.append(new_frame)
+
+    def _check_in(self, value, container) -> bool:
+        """포함 검사"""
+        if isinstance(container, list):
+            return value in container
+        elif isinstance(container, str):
+            return str(value) in container
+        elif isinstance(container, dict):
+            return str(value) in container
+        else:
+            return False
+
+    def get_output(self) -> str:
+        """출력 버퍼 반환"""
+        result = ""
+        for i in range(len(self.output)):
+            if i > 0:
+                result = result + "\n"
+            result = result + self.output[i]
+        return result
+
+    def set_global(self, name: str, value) -> None:
+        """전역 변수 설정"""
+        self.globals[name] = value
+
+    def get_global(self, name: str):
+        """전역 변수 조회"""
+        return self.globals.get(name, None)
+
+    def register_builtin(self, name: str, func) -> None:
+        """내장 함수 등록"""
+        self.globals[name] = func

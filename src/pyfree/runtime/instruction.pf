@@ -1,0 +1,147 @@
+# PyFree Runtime: Instruction Definition
+# IR 명령어 정의
+
+# Opcode 상수들
+class Opcode:
+    """47개의 VM 명령어 정의"""
+
+    # 로드/저장
+    LOAD_CONST = "LOAD_CONST"           # 상수 로드: r[a] = consts[b]
+    LOAD_GLOBAL = "LOAD_GLOBAL"         # 전역 변수: r[a] = globals[b]
+    LOAD_FAST = "LOAD_FAST"             # 지역 변수: r[a] = locals[b]
+    LOAD_NONE = "LOAD_NONE"             # None 로드: r[a] = None
+    LOAD_TRUE = "LOAD_TRUE"             # True 로드: r[a] = True
+    LOAD_FALSE = "LOAD_FALSE"           # False 로드: r[a] = False
+
+    STORE_GLOBAL = "STORE_GLOBAL"       # 전역 변수 저장: globals[a] = r[b]
+    STORE_FAST = "STORE_FAST"           # 지역 변수 저장: locals[a] = r[b]
+
+    # 산술 연산
+    ADD = "ADD"                         # 더하기: r[a] = r[b] + r[c]
+    SUB = "SUB"                         # 빼기: r[a] = r[b] - r[c]
+    MUL = "MUL"                         # 곱하기: r[a] = r[b] * r[c]
+    DIV = "DIV"                         # 나누기: r[a] = r[b] / r[c]
+    MOD = "MOD"                         # 나머지: r[a] = r[b] % r[c]
+    POW = "POW"                         # 거듭제곱: r[a] = r[b] ** r[c]
+
+    # 단항 연산
+    NEG = "NEG"                         # 부호 반전: r[a] = -r[b]
+    NOT = "NOT"                         # 논리 NOT: r[a] = not r[b]
+
+    # 비교
+    EQ = "EQ"                           # 같음: r[a] = (r[b] == r[c])
+    NE = "NE"                           # 같지 않음: r[a] = (r[b] != r[c])
+    LT = "LT"                           # 작음: r[a] = (r[b] < r[c])
+    GT = "GT"                           # 큼: r[a] = (r[b] > r[c])
+    LE = "LE"                           # 작거나 같음: r[a] = (r[b] <= r[c])
+    GE = "GE"                           # 크거나 같음: r[a] = (r[b] >= r[c])
+
+    # 논리
+    AND = "AND"                         # AND: r[a] = r[b] and r[c]
+    OR = "OR"                           # OR: r[a] = r[b] or r[c]
+    IN = "IN"                           # 포함: r[a] = (r[b] in r[c])
+
+    # 제어 흐름
+    JUMP = "JUMP"                       # 무조건 점프: goto offset
+    JUMP_IF_FALSE = "JUMP_IF_FALSE"     # 거짓이면 점프: if not r[a] goto offset
+    JUMP_IF_TRUE = "JUMP_IF_TRUE"       # 참이면 점프: if r[a] goto offset
+
+    # 함수
+    CALL = "CALL"                       # 함수 호출: r[a] = call(func, argc=b, args...)
+    RETURN = "RETURN"                   # 반환: return r[a]
+    MAKE_FUNCTION = "MAKE_FUNCTION"     # 함수 생성: r[a] = Function(code[b])
+
+    # 컨테이너
+    BUILD_LIST = "BUILD_LIST"           # 리스트 생성: r[a] = [r[b], r[c], ...]
+    BUILD_DICT = "BUILD_DICT"           # 딕셔너리 생성: r[a] = {k:v, ...}
+    BUILD_TUPLE = "BUILD_TUPLE"         # 튜플 생성: r[a] = (r[b], r[c], ...)
+    INDEX_GET = "INDEX_GET"             # 인덱싱: r[a] = r[b][r[c]]
+    INDEX_SET = "INDEX_SET"             # 인덱싱 저장: r[a][r[b]] = r[c]
+    ATTR_GET = "ATTR_GET"               # 멤버 접근: r[a] = r[b].name
+    ATTR_SET = "ATTR_SET"               # 멤버 저장: r[a].name = r[b]
+
+    # 반복
+    SETUP_LOOP = "SETUP_LOOP"           # 루프 설정: push loop context
+    POP_LOOP = "POP_LOOP"               # 루프 해제: pop loop context
+    BREAK = "BREAK"                     # break 문
+    CONTINUE = "CONTINUE"               # continue 문
+
+    # 예외 처리
+    SETUP_TRY = "SETUP_TRY"             # try 설정: push handler
+    POP_TRY = "POP_TRY"                 # try 해제: pop handler
+    RAISE = "RAISE"                     # 예외 발생: raise r[a]
+
+    # 기타
+    NOP = "NOP"                         # 아무것도 하지 않음
+    PRINT = "PRINT"                     # 출력: print r[a]
+    POP_TOP = "POP_TOP"                 # 스택 상위 제거
+    DUP = "DUP"                         # 복제: push(top())
+
+
+class Instruction:
+    """VM 명령어"""
+
+    def __init__(self, opcode: str, args: list = None, line: int = 0, column: int = 0):
+        self.opcode = opcode
+        self.args = args if args is not None else []
+        self.line = line
+        self.column = column
+
+    def __str__(self) -> str:
+        if len(self.args) > 0:
+            return f"{self.opcode} {self.args}"
+        else:
+            return self.opcode
+
+    def __repr__(self) -> str:
+        return f"Instruction({self.opcode}, {self.args}, line={self.line})"
+
+
+class IRProgram:
+    """컴파일된 IR 프로그램"""
+
+    def __init__(self):
+        self.constants = []             # 상수 풀
+        self.globals = {}               # 전역 변수
+        self.functions = {}             # 함수 정의
+        self.code = []                  # 메인 코드
+
+    def add_constant(self, value):
+        """상수 추가 (중복 제거)"""
+        # 간단한 중복 제거 (문자열 기반)
+        for i in range(len(self.constants)):
+            if self.constants[i] == value:
+                return i
+
+        self.constants.append(value)
+        return len(self.constants) - 1
+
+    def add_global(self, name: str, value=None):
+        """전역 변수 추가"""
+        self.globals[name] = value
+
+    def add_function(self, name: str, func):
+        """함수 추가"""
+        self.functions[name] = func
+
+    def __str__(self) -> str:
+        return f"IRProgram(constants={len(self.constants)}, code={len(self.code)})"
+
+
+class IRFunction:
+    """컴파일된 함수"""
+
+    def __init__(self, name: str, param_count: int = 0, local_count: int = 0):
+        self.name = name
+        self.param_count = param_count
+        self.local_count = local_count
+        self.code = []
+        self.is_async = False
+        self.param_names = []
+
+    def add_param(self, name: str):
+        """파라미터 추가"""
+        self.param_names.append(name)
+
+    def __str__(self) -> str:
+        return f"IRFunction({self.name}, params={self.param_count}, code={len(self.code)})"
