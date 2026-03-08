@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log
+dist
+.git
+.gitignore
+.github
+.claude
+.vscode
+.env
+.env.local
+tests
+docs
+*.md
+.DS_Store
+.cache
+.npm
+pyfree-examples
