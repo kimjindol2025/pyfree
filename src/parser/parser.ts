@@ -219,6 +219,8 @@ export class PyFreeParser {
     }
 
     this.consume(TokenType.COLON, ': 필요');
+    // ✅ NEWLINE skip after COLON (2026-03-09)
+    this.match(TokenType.NEWLINE);
     const body = this.parseBlock();
 
     return {
@@ -287,6 +289,8 @@ export class PyFreeParser {
     }
 
     this.consume(TokenType.COLON, ': 필요');
+    // ✅ NEWLINE skip after COLON (2026-03-09)
+    this.match(TokenType.NEWLINE);
     const body = this.parseBlock();
 
     return {
@@ -318,6 +322,8 @@ export class PyFreeParser {
       this.advance();
       const elifCondition = this.parseExpression();
       this.consume(TokenType.COLON, ': 필요');
+      // ✅ NEWLINE skip after COLON (2026-03-09)
+      this.match(TokenType.NEWLINE);
       const elifBody = this.parseBlock();
       elifParts.push({
         condition: elifCondition,
@@ -328,6 +334,8 @@ export class PyFreeParser {
     let elseBody: AST.Statement[] | undefined;
     if (this.match(TokenType.ELSE)) {
       this.consume(TokenType.COLON, ': 필요');
+      // ✅ NEWLINE skip after COLON (2026-03-09)
+      this.match(TokenType.NEWLINE);
       elseBody = this.parseBlock();
     }
 
@@ -354,11 +362,15 @@ export class PyFreeParser {
     const iterable = this.parseExpression();
 
     this.consume(TokenType.COLON, ': 필요');
+    // ✅ NEWLINE skip after COLON (2026-03-09)
+    this.match(TokenType.NEWLINE);
     const body = this.parseBlock();
 
     let elseBody: AST.Statement[] | undefined;
     if (this.match(TokenType.ELSE)) {
       this.consume(TokenType.COLON, ': 필요');
+      // ✅ NEWLINE skip after COLON (2026-03-09)
+      this.match(TokenType.NEWLINE);
       elseBody = this.parseBlock();
     }
 
@@ -382,11 +394,15 @@ export class PyFreeParser {
 
     const condition = this.parseExpression();
     this.consume(TokenType.COLON, ': 필요');
+    // ✅ NEWLINE skip after COLON (2026-03-09)
+    this.match(TokenType.NEWLINE);
     const body = this.parseBlock();
 
     let elseBody: AST.Statement[] | undefined;
     if (this.match(TokenType.ELSE)) {
       this.consume(TokenType.COLON, ': 필요');
+      // ✅ NEWLINE skip after COLON (2026-03-09)
+      this.match(TokenType.NEWLINE);
       elseBody = this.parseBlock();
     }
 
@@ -458,6 +474,8 @@ export class PyFreeParser {
     const startToken = this.peek();
     this.consume(TokenType.TRY, 'try 키워드 필요');
     this.consume(TokenType.COLON, ': 필요');
+    // ✅ NEWLINE skip after COLON (2026-03-09)
+    this.match(TokenType.NEWLINE);
 
     const body = this.parseBlock();
     const handlers: AST.ExceptionHandler[] = [];
@@ -475,6 +493,8 @@ export class PyFreeParser {
       }
 
       this.consume(TokenType.COLON, ': 필요');
+      // ✅ NEWLINE skip after COLON (2026-03-09)
+      this.match(TokenType.NEWLINE);
       const handlerBody = this.parseBlock();
 
       handlers.push({
@@ -487,12 +507,16 @@ export class PyFreeParser {
     let elseBody: AST.Statement[] | undefined;
     if (this.match(TokenType.ELSE)) {
       this.consume(TokenType.COLON, ': 필요');
+      // ✅ NEWLINE skip after COLON (2026-03-09)
+      this.match(TokenType.NEWLINE);
       elseBody = this.parseBlock();
     }
 
     let finallyBody: AST.Statement[] | undefined;
     if (this.match(TokenType.FINALLY)) {
       this.consume(TokenType.COLON, ': 필요');
+      // ✅ NEWLINE skip after COLON (2026-03-09)
+      this.match(TokenType.NEWLINE);
       finallyBody = this.parseBlock();
     }
 
@@ -581,6 +605,8 @@ export class PyFreeParser {
     } while (this.match(TokenType.COMMA));
 
     this.consume(TokenType.COLON, ': 필요');
+    // ✅ NEWLINE skip after COLON (2026-03-09)
+    this.match(TokenType.NEWLINE);
     const body = this.parseBlock();
 
     return {

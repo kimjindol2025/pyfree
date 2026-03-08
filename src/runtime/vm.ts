@@ -223,7 +223,8 @@ export class VM {
 
       // 제어 흐름
       case Opcode.JUMP:
-        frame.pc = bNum;
+        // ✅ 버그 수정 (2026-03-09): JUMP [offset] 형식에서 offset은 첫번째 인자(a)
+        frame.pc = aNum;
         break;
 
       case Opcode.JUMP_IF_FALSE:
