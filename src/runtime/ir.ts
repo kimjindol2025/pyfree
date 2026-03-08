@@ -726,8 +726,9 @@ export class IRCompiler {
       const symbol = this.lookupSymbol(name);
 
       if (symbol && !symbol.isGlobal && symbol.register !== undefined) {
+        // ✅ 버그 수정 (2026-03-09): STORE_FAST에 변수 이름 전달 (레지스터 번호 아님)
         // 로컬 변수
-        this.builder.emit(Opcode.STORE_FAST, [symbol.register, valueReg]);
+        this.builder.emit(Opcode.STORE_FAST, [name, valueReg]);
       } else {
         // 전역 변수
         const globalName = this.builder.addGlobal(name);
@@ -923,8 +924,9 @@ export class IRCompiler {
     const symbol = this.lookupSymbol(name);
 
     if (symbol && !symbol.isGlobal && symbol.register !== undefined) {
+      // ✅ 버그 수정 (2026-03-09): LOAD_FAST에 변수 이름 전달 (레지스터 번호 아님)
       // 로컬 변수
-      this.builder.emit(Opcode.LOAD_FAST, [resultReg, symbol.register]);
+      this.builder.emit(Opcode.LOAD_FAST, [resultReg, name]);
     } else if (symbol && symbol.isGlobal && symbol.globalName) {
       // 전역 변수
       this.builder.emit(Opcode.LOAD_GLOBAL, [resultReg, symbol.globalName]);
@@ -1064,7 +1066,8 @@ export class IRCompiler {
       } else if (actualArg.type === 'Identifier') {
         const symbol = this.lookupSymbol(actualArg.name);
         if (symbol && !symbol.isGlobal && symbol.register !== undefined) {
-          this.builder.emit(Opcode.LOAD_FAST, [argReg, symbol.register]);
+          // ✅ 버그 수정 (2026-03-09): LOAD_FAST에 변수 이름 전달
+          this.builder.emit(Opcode.LOAD_FAST, [argReg, actualArg.name]);
         } else if (symbol && symbol.isGlobal && symbol.index !== undefined) {
           this.builder.emit(Opcode.LOAD_GLOBAL, [argReg, symbol.index]);
         } else {
