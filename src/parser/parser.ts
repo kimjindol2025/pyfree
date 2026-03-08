@@ -309,6 +309,8 @@ export class PyFreeParser {
 
     const condition = this.parseExpression();
     this.consume(TokenType.COLON, ': 필요');
+    // ✅ 버그 수정 (2026-03-09): COLON 후 NEWLINE skip
+    this.match(TokenType.NEWLINE);
     const body = this.parseBlock();
 
     const elifParts: AST.ElifPart[] = [];
