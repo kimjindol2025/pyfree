@@ -392,7 +392,9 @@ class IRCompiler:
 
         # 함수 호출
         result_reg = self.allocate_register()
-        self.emit("CALL", [func_reg, len(arg_regs)])
+        # ✅ 수정: CALL 형식 = [result_reg, func_reg, arg_count, arg1, arg2, ...]
+        call_args = [result_reg, func_reg, len(arg_regs)] + arg_regs
+        self.emit("CALL", call_args)
 
         return result_reg
 

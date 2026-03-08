@@ -223,7 +223,12 @@ class VM:
 
         # 함수
         elif op == Opcode.CALL:
-            self._call_function(frame, a_num, b_num, c_num)
+            # CALL 형식: [result_reg, func_reg, arg_count, arg1, arg2, ...]
+            result_reg = args[0]
+            func_reg = args[1]
+            arg_count = args[2]
+            arg_regs = args[3:3 + arg_count] if arg_count > 0 else []
+            self._call_function_new(frame, result_reg, func_reg, arg_regs)
 
         elif op == Opcode.RETURN:
             value = frame.get_register(a_num)
@@ -371,6 +376,37 @@ class VM:
                 if i < func.param_count:
                     param_name = func.param_names[i]
                     arg_value = frame.get_register(dst + 1 + i)
+                    new_frame.set_local(param_name, arg_value)
+
+            self.frame_stack.append(new_frame)
+
+    def _call_function_new(self, frame: Frame, result_reg: int, func_reg: int, arg_regs: list) -> None:
+        """✅ 수정된 함수 호출 처리 - 인자를 직접 받음"""
+        func = frame.get_register(func_reg)
+
+        # 인자 값들을 레지스터에서 가져오기
+        arg_values = []
+        for arg_reg in arg_regs:
+            arg_values.append(frame.get_register(arg_reg))
+
+        # 네이티브 함수 (print, len, range 등)
+        if callable(func):
+            try:
+                result = func(*arg_values)
+                frame.set_register(result_reg, result)
+            except Exception as e:
+                raise Exception("Function call error: " + str(e))
+            return
+
+        # IR 함수
+        if isinstance(func, IRFunction):
+            new_frame = Frame(func.code, func, func.param_count)
+
+            # 파라미터 전달
+            for i in range(len(arg_values)):
+                if i < func.param_count:
+                    param_name = func.param_names[i]
+                    arg_value = arg_values[i]
                     new_frame.set_local(param_name, arg_value)
 
             self.frame_stack.append(new_frame)
