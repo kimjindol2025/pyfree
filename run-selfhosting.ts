@@ -3,10 +3,10 @@
  * 모든 24개 npm 패키지 실시간 사용
  */
 
-import express, { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
+import express, { Request, Response, Application } from 'express';
+import * as bcrypt from 'bcryptjs';
 import moment from 'moment';
-import * as compression from 'compression';
+import compression from 'compression';
 
 const app = express();
 const port = 3000;
@@ -32,8 +32,8 @@ const redis = {
 
 // Simple Lodash (필요한 함수만)
 const lodash = {
-  map: (arr: any[], fn: Function) => arr.map(fn),
-  filter: (arr: any[], fn: Function) => arr.filter(fn),
+  map: (arr: any[], fn: (item: any, index?: number) => any) => arr.map(fn),
+  filter: (arr: any[], fn: (item: any, index?: number) => boolean) => arr.filter(fn),
   includes: (arr: any[], val: any) => arr.includes(val),
   union: (arr1: any[], arr2: any[]) => [...new Set([...arr1, ...arr2])],
   reverse: (arr: any[]) => [...arr].reverse()
@@ -149,8 +149,9 @@ app.get('/packages', (req: Request, res: Response) => {
     group5: ['redux', 'jest', 'pm2', 'winston']
   };
 
-  const allPackages = lodash.union(
-    ...Object.values(packages)
+  const allPackages = Object.values(packages).reduce(
+    (acc: any[], group: string[]) => lodash.union(acc, group),
+    []
   );
 
   res.json({
