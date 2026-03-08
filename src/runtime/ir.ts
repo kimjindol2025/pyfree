@@ -631,38 +631,80 @@ export class IRCompiler {
       return;
     }
 
-    const loopStartOffset = this.builder.getCurrentOffset();
-    this.loopStack.push(loopStartOffset);
+    // ✅ 런타임 FOR 루프 구현 (2026-03-09)
+    // 패턴: SETUP_LOOP → 인덱스초기화 → 길이계산 → 조건체크 → 요소추출 → 본문 → 인덱스증가 → JUMP → POP_LOOP
 
-    // ✅ 버그 수정 (2026-03-09): 1000회 하드코딩 → 100회로 제한
-    // TODO: 런타임 루프로 완전히 개선 필요 (FOR_ITER opcode 구현)
-    // 각 요소에 대해 반복
-    // 간단한 구현: 배열이라고 가정 (최대 100개 요소)
-    for (let i = 0; i < 100; i++) {
-      const itemReg = this.allocRegister();
-      const idxConstIdx = this.builder.addConstant(i);
-      this.builder.emit(Opcode.LOAD_CONST, [itemReg, idxConstIdx]);
+    // Step 1: 레지스터 할당
+    const idxReg = this.allocRegister();      // 루프 인덱스
+    const lenReg = this.allocRegister();      // iterable 길이
+    const lenFnReg = this.allocRegister();    // len 함수
+    const condReg = this.allocRegister();     // 조건 결과
+    const itemReg = this.allocRegister();     // 현재 요소
 
-      // 루프 본문 컴파일
-      const oldSymbol = this.lookupSymbol(targetName);
-      const targetReg = this.allocRegister();
-      this.registerSymbol(targetName, false, targetReg);
+    // Step 2: 인덱스 초기화 (idx = 0)
+    const zeroIdx = this.builder.addConstant(0);
+    this.builder.emit(Opcode.LOAD_CONST, [idxReg, zeroIdx]);
 
-      for (const s of stmt.body) {
-        this.compileStatement(s);
-      }
+    // Step 3: len 함수 로드 및 호출 (len = len(iterable))
+    this.builder.emit(Opcode.LOAD_GLOBAL, [lenFnReg, 'len']);
+    this.builder.emit(Opcode.CALL, [lenReg, lenFnReg, 1, iterReg]);
 
-      if (oldSymbol) {
-        this.symbols.set(targetName, oldSymbol);
-      } else {
-        this.symbols.delete(targetName);
-      }
+    // Step 4: SETUP_LOOP (break/continue 지원)
+    this.builder.emit(Opcode.SETUP_LOOP, [0, 0]);
+    const setupLoopIdx = this.builder.code.length - 1;
 
-      this.freeRegister(itemReg);
-      this.freeRegister(targetReg);
+    // Step 5: 조건 체크 레이블 (idx < len)
+    const condCheckOffset = this.builder.getCurrentOffset();
+    this.loopStack.push(condCheckOffset);
+
+    this.builder.emit(Opcode.LT, [condReg, idxReg, lenReg]);
+    const jumpIfFalseIdx = this.builder.getCurrentOffset();
+    this.builder.emit(Opcode.JUMP_IF_FALSE, [condReg, 0]);  // 종료 오프셋은 나중에 패치
+
+    // Step 6: 현재 요소 추출 및 루프 변수 저장
+    this.builder.emit(Opcode.INDEX_GET, [itemReg, iterReg, idxReg]);
+    this.builder.emit(Opcode.STORE_FAST, [targetName, itemReg]);
+
+    // 심볼 테이블에 등록 (루프 변수)
+    const oldSymbol = this.lookupSymbol(targetName);
+    this.registerSymbol(targetName, false, itemReg);
+
+    // Step 7: 루프 본문 컴파일
+    for (const s of stmt.body) {
+      this.compileStatement(s);
     }
 
+    // 심볼 복원
+    if (oldSymbol) {
+      this.symbols.set(targetName, oldSymbol);
+    } else {
+      this.symbols.delete(targetName);
+    }
+
+    // Step 8: 인덱스 증가 (idx = idx + 1)
+    const oneIdx = this.builder.addConstant(1);
+    const oneReg = this.allocRegister();
+    this.builder.emit(Opcode.LOAD_CONST, [oneReg, oneIdx]);
+    this.builder.emit(Opcode.ADD, [idxReg, idxReg, oneReg]);
+    this.freeRegister(oneReg);
+
+    // Step 9: 조건 체크로 점프
+    this.builder.emit(Opcode.JUMP, [condCheckOffset]);
+
+    // Step 10: 루프 종료 레이블 및 패치
+    const loopEndOffset = this.builder.getCurrentOffset();
+    this.builder.code[jumpIfFalseIdx].args[1] = loopEndOffset;
+    this.builder.code[setupLoopIdx].args[1] = loopEndOffset;
+
+    this.builder.emit(Opcode.POP_LOOP, []);
+
+    // 정리
     this.loopStack.pop();
+    this.freeRegister(idxReg);
+    this.freeRegister(lenReg);
+    this.freeRegister(lenFnReg);
+    this.freeRegister(condReg);
+    this.freeRegister(itemReg);
     this.freeRegister(iterReg);
   }
 
