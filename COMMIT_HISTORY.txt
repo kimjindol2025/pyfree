@@ -1,0 +1,6 @@
+64e300d 📋 구현 현황 문서 작성 (Phase 1 완료)
+e5a7ff1 ✅ AST→IR 컴파일러 완전 구현, 런타임 실행 가능
+ee812b2 Phase 1 Week 5-6: 타입 체커 구현 (Gradual Type System)
+4b71fee Phase 1 Week 3-4: Parser 구현 (AST + 재귀 하강 파서 + 테스트 55개)
+32e6b7a 🚀 Phase 1 구현 시작: Lexer 기본 구조
+47b82f0 🎉 PyFree Language 신규 저장소 초기화
