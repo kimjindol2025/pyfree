@@ -1,82 +1,180 @@
 #!pyfree:mode=static
 """
-PyFree Example 4: Data Analysis
-pandas + numpy를 활용한 데이터 분석
+PyFree Example 4: Data Analysis with Math & Collections
+math와 collections 라이브러리를 활용한 판매 데이터 분석
 """
 
-import pandas as pd
-import numpy as np
+from math import sqrt, floor, ceil
+from collections import defaultdict
 
-def load_sales_data(filepath: str) -> Result[pd.DataFrame, str]:
-    """
-    CSV 파일에서 판매 데이터 로드
-    """
-    try:
-        df = pd.read_csv(filepath)
-        return Ok(df)
-    except FileNotFoundError:
-        return Err(f"파일을 찾을 수 없습니다: {filepath}")
-    except Exception as e:
-        return Err(f"로드 실패: {str(e)}")
+def calculate_average(values: list[float]) -> float:
+    """평균값 계산"""
+    if len(values) == 0:
+        return 0.0
 
-def analyze_sales(df: pd.DataFrame) -> dict:
+    total = 0.0
+    for v in values:
+        total = total + v
+
+    return total / len(values)
+
+def calculate_sum(values: list[float]) -> float:
+    """합계 계산"""
+    total = 0.0
+    for v in values:
+        total = total + v
+    return total
+
+def calculate_variance(values: list[float]) -> float:
+    """분산 계산"""
+    if len(values) == 0:
+        return 0.0
+
+    avg = calculate_average(values)
+    sum_sq_diff = 0.0
+
+    for v in values:
+        diff = v - avg
+        sum_sq_diff = sum_sq_diff + (diff * diff)
+
+    return sum_sq_diff / len(values)
+
+def calculate_std_dev(values: list[float]) -> float:
+    """표준편차 계산"""
+    variance = calculate_variance(values)
+    return sqrt(variance)
+
+def analyze_sales(sales_data: list[dict]) -> dict:
     """판매 데이터 분석"""
-    stats = {
-        "total_rows": len(df),
-        "total_sales": float(df["amount"].sum()),
-        "average_sale": float(df["amount"].mean()),
-        "median_sale": float(df["amount"].median()),
-        "max_sale": float(df["amount"].max()),
-        "min_sale": float(df["amount"].min()),
-        "std_dev": float(df["amount"].std()),
+    amounts = []
+    for item in sales_data:
+        amounts.append(item["amount"])
+
+    # 기본 통계
+    total = calculate_sum(amounts)
+    avg = calculate_average(amounts)
+    variance = calculate_variance(amounts)
+    std_dev = calculate_std_dev(amounts)
+
+    # 최대/최소
+    max_amount = amounts[0]
+    min_amount = amounts[0]
+    for amount in amounts:
+        if amount > max_amount:
+            max_amount = amount
+        if amount < min_amount:
+            min_amount = amount
+
+    return {
+        "count": len(amounts),
+        "total": total,
+        "average": avg,
+        "max": max_amount,
+        "min": min_amount,
+        "variance": variance,
+        "std_dev": std_dev,
     }
-    return stats
 
-def filter_by_date_range(df: pd.DataFrame, start_date: str, end_date: str) -> pd.DataFrame:
-    """날짜 범위로 필터링"""
-    df["date"] = pd.to_datetime(df["date"])
-    mask = (df["date"] >= start_date) & (df["date"] <= end_date)
-    return df[mask]
-
-def group_by_category(df: pd.DataFrame) -> dict:
+def group_by_category(sales_data: list[dict]) -> dict:
     """카테고리별 합계 계산"""
-    grouped = df.groupby("category")["amount"].sum()
-    return grouped.to_dict()
+    categories: defaultdict[str, float] = defaultdict(lambda: 0.0)
+
+    for item in sales_data:
+        category = item["category"]
+        amount = item["amount"]
+        categories[category] = categories[category] + amount
+
+    # defaultdict를 일반 dict로 변환
+    result = {}
+    for cat in categories:
+        result[cat] = categories[cat]
+
+    return result
+
+def calculate_percentiles(amounts: list[float]) -> dict:
+    """백분위수 계산"""
+    # 정렬 (간단한 버블 정렬)
+    sorted_amounts = []
+    for a in amounts:
+        sorted_amounts.append(a)
+
+    for i in range(len(sorted_amounts)):
+        for j in range(i + 1, len(sorted_amounts)):
+            if sorted_amounts[j] < sorted_amounts[i]:
+                temp = sorted_amounts[i]
+                sorted_amounts[i] = sorted_amounts[j]
+                sorted_amounts[j] = temp
+
+    # 25%, 50%, 75% 계산
+    idx_25 = floor(len(sorted_amounts) * 0.25)
+    idx_50 = floor(len(sorted_amounts) * 0.50)
+    idx_75 = floor(len(sorted_amounts) * 0.75)
+
+    return {
+        "p25": sorted_amounts[idx_25],
+        "p50": sorted_amounts[idx_50],
+        "p75": sorted_amounts[idx_75],
+    }
 
 def main():
-    # 샘플 데이터 생성
-    sample_data = pd.DataFrame({
-        "date": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],
-        "category": ["A", "B", "A", "C", "B"],
-        "amount": [100.0, 150.0, 200.0, 75.0, 125.0],
-    })
+    # 샘플 판매 데이터
+    sales_data = [
+        {"date": "2024-01-01", "category": "A", "amount": 100.0},
+        {"date": "2024-01-02", "category": "B", "amount": 150.0},
+        {"date": "2024-01-03", "category": "A", "amount": 200.0},
+        {"date": "2024-01-04", "category": "C", "amount": 75.0},
+        {"date": "2024-01-05", "category": "B", "amount": 125.0},
+        {"date": "2024-01-06", "category": "A", "amount": 180.0},
+        {"date": "2024-01-07", "category": "C", "amount": 95.0},
+    ]
 
-    # 분석 실행
-    print("=== 판매 데이터 분석 ===")
-    print()
+    print("=== 📊 판매 데이터 분석 ===\n")
 
-    stats = analyze_sales(sample_data)
-    print("📊 전체 통계:")
-    print(f"  총 행: {stats['total_rows']}")
-    print(f"  합계: ${stats['total_sales']:.2f}")
-    print(f"  평균: ${stats['average_sale']:.2f}")
-    print(f"  중앙값: ${stats['median_sale']:.2f}")
-    print(f"  최대: ${stats['max_sale']:.2f}")
-    print(f"  최소: ${stats['min_sale']:.2f}")
+    # 전체 통계
+    stats = analyze_sales(sales_data)
+    print("📈 전체 통계:")
+    print(f"  데이터 개수: {stats['count']}")
+    print(f"  총 판매액: ${stats['total']:.2f}")
+    print(f"  평균 판매액: ${stats['average']:.2f}")
+    print(f"  최대 판매액: ${stats['max']:.2f}")
+    print(f"  최소 판매액: ${stats['min']:.2f}")
     print(f"  표준편차: ${stats['std_dev']:.2f}")
     print()
 
-    category_totals = group_by_category(sample_data)
-    print("📈 카테고리별 합계:")
-    for cat, total in category_totals.items():
+    # 카테고리별 분석
+    category_totals = group_by_category(sales_data)
+    print("🏷️  카테고리별 합계:")
+    for cat in category_totals:
+        total = category_totals[cat]
         print(f"  {cat}: ${total:.2f}")
     print()
 
-    # 필터링
-    filtered = filter_by_date_range(sample_data, "2024-01-02", "2024-01-04")
-    print(f"📅 필터된 데이터 (2024-01-02 ~ 2024-01-04): {len(filtered)}행")
-    for _, row in filtered.iterrows():
-        print(f"  {row['date']}: {row['category']} - ${row['amount']:.2f}")
+    # 백분위수 분석
+    amounts = []
+    for item in sales_data:
+        amounts.append(item["amount"])
+
+    percentiles = calculate_percentiles(amounts)
+    print("📊 백분위수:")
+    print(f"  25% (Q1): ${percentiles['p25']:.2f}")
+    print(f"  50% (Q2): ${percentiles['p50']:.2f}")
+    print(f"  75% (Q3): ${percentiles['p75']:.2f}")
+    print()
+
+    # 카테고리별 성과
+    print("🎯 카테고리별 평균 판매액:")
+    for cat in category_totals:
+        # 각 카테고리의 항목 개수 계산
+        count = 0
+        total = 0.0
+        for item in sales_data:
+            if item["category"] == cat:
+                count = count + 1
+                total = total + item["amount"]
+
+        if count > 0:
+            avg = total / count
+            print(f"  {cat}: ${avg:.2f} (건수: {count})")
 
 if __name__ == "__main__":
     main()

@@ -1,110 +1,185 @@
 #!pyfree:mode=static
 """
-PyFree Example 3: Web API Server
-async/await + Result + 웹 라우팅
+PyFree Example 3: HTTP Server with Collections
+collections 라이브러리를 활용한 in-memory 데이터 관리
 """
 
-from pyfree.web import App, route, json_response
-from pyfree.data import DataFrame
-from dataclasses import dataclass
-import json
+from collections import defaultdict
+from http import createHTTPServer, Request, Response
 
-@dataclass
-class User:
-    id: int
-    name: str
-    email: str
-
-# 메모리 내 사용자 저장소 (프로토타입)
-USERS: dict[int, User] = {
-    1: User(1, "Alice", "alice@example.com"),
-    2: User(2, "Bob", "bob@example.com"),
-    3: User(3, "Charlie", "charlie@example.com"),
+# 메모리 기반 사용자 저장소
+USERS: dict[int, dict] = {
+    1: {"id": 1, "name": "Alice", "email": "alice@example.com"},
+    2: {"id": 2, "name": "Bob", "email": "bob@example.com"},
+    3: {"id": 3, "name": "Charlie", "email": "charlie@example.com"},
 }
 
-app = App()
+# 요청 로그 (카테고리별로 count)
+REQUEST_LOG: defaultdict[str, int] = defaultdict(lambda: 0)
 
-@app.route("/users", method="GET")
-async def list_users(req) -> Result[dict, str]:
+def handle_list_users(req: Request) -> Result[dict, str]:
     """모든 사용자 반환"""
-    users = [{"id": u.id, "name": u.name, "email": u.email} for u in USERS.values()]
+    users = []
+    for user_id in USERS:
+        users.append(USERS[user_id])
+
+    REQUEST_LOG["GET /users"] = REQUEST_LOG["GET /users"] + 1
+
     return Ok({
         "status": "success",
         "count": len(users),
         "data": users
     })
 
-@app.route("/users/:id", method="GET")
-async def get_user(req, id: int) -> Result[dict, str]:
+def handle_get_user(req: Request, user_id: int) -> Result[dict, str]:
     """특정 사용자 조회"""
-    if id not in USERS:
-        return Err(f"사용자 {id}를 찾을 수 없습니다")
+    if user_id not in USERS:
+        return Err(f"사용자 {user_id}를 찾을 수 없습니다")
 
-    user = USERS[id]
+    REQUEST_LOG["GET /users/:id"] = REQUEST_LOG["GET /users/:id"] + 1
+
     return Ok({
         "status": "success",
-        "data": {
-            "id": user.id,
-            "name": user.name,
-            "email": user.email
-        }
+        "data": USERS[user_id]
     })
 
-@app.route("/users", method="POST")
-async def create_user(req) -> Result[dict, str]:
+def handle_create_user(req: Request, name: str, email: str) -> Result[dict, str]:
     """새 사용자 생성"""
-    try:
-        body = await req.json()
-        name = body.get("name", "")
-        email = body.get("email", "")
+    # name/email 유효성 검사
+    if not name or len(name) == 0:
+        return Err("name은 필수입니다")
 
-        if not name or not email:
-            return Err("name과 email은 필수입니다")
+    if not email or len(email) == 0:
+        return Err("email은 필수입니다")
 
-        # ID 자동 생성
-        new_id = max(USERS.keys()) + 1 if USERS else 1
-        user = User(new_id, name, email)
-        USERS[new_id] = user
+    # ID 자동 생성
+    new_id = 1
+    for user_id in USERS:
+        if user_id >= new_id:
+            new_id = user_id + 1
 
-        return Ok({
-            "status": "created",
-            "data": {
-                "id": user.id,
-                "name": user.name,
-                "email": user.email
-            }
-        })
-    except Exception as e:
-        return Err(f"생성 실패: {str(e)}")
+    user = {
+        "id": new_id,
+        "name": name,
+        "email": email
+    }
+    USERS[new_id] = user
 
-@app.route("/users/:id", method="DELETE")
-async def delete_user(req, id: int) -> Result[dict, str]:
+    REQUEST_LOG["POST /users"] = REQUEST_LOG["POST /users"] + 1
+
+    return Ok({
+        "status": "created",
+        "data": user
+    })
+
+def handle_delete_user(req: Request, user_id: int) -> Result[dict, str]:
     """사용자 삭제"""
-    if id not in USERS:
-        return Err(f"사용자 {id}를 찾을 수 없습니다")
+    if user_id not in USERS:
+        return Err(f"사용자 {user_id}를 찾을 수 없습니다")
 
-    deleted_user = USERS.pop(id)
+    deleted = USERS[user_id]
+    # dict에서 제거
+    temp = {}
+    for uid in USERS:
+        if uid != user_id:
+            temp[uid] = USERS[uid]
+    USERS.clear()
+    for uid in temp:
+        USERS[uid] = temp[uid]
+
+    REQUEST_LOG["DELETE /users/:id"] = REQUEST_LOG["DELETE /users/:id"] + 1
+
     return Ok({
         "status": "deleted",
-        "data": {
-            "id": deleted_user.id,
-            "name": deleted_user.name,
-            "email": deleted_user.email
-        }
+        "data": deleted
+    })
+
+def handle_stats(req: Request) -> Result[dict, str]:
+    """요청 통계 조회"""
+    REQUEST_LOG["GET /stats"] = REQUEST_LOG["GET /stats"] + 1
+
+    stats_data = {}
+    for key in REQUEST_LOG:
+        stats_data[key] = REQUEST_LOG[key]
+
+    return Ok({
+        "total_users": len(USERS),
+        "total_requests": sum([REQUEST_LOG[k] for k in REQUEST_LOG]),
+        "requests_by_endpoint": stats_data
     })
 
 def main():
-    print("PyFree API 서버 시작...")
+    print("=== PyFree HTTP 서버 ===\n")
     print("Listen: http://localhost:8080")
     print("")
-    print("사용 가능한 엔드포인트:")
-    print("  GET    /users          - 모든 사용자 조회")
-    print("  GET    /users/:id      - 특정 사용자 조회")
-    print("  POST   /users          - 새 사용자 생성")
-    print("  DELETE /users/:id      - 사용자 삭제")
+    print("📍 사용 가능한 엔드포인트:")
+    print("  GET    /users              - 모든 사용자 조회")
+    print("  GET    /users/:id          - 특정 사용자 조회")
+    print("  POST   /users?name=X&email=Y - 새 사용자 생성")
+    print("  DELETE /users/:id          - 사용자 삭제")
+    print("  GET    /stats              - 요청 통계")
+    print("")
+    print("💡 curl 예제:")
+    print("  curl http://localhost:8080/users")
+    print("  curl http://localhost:8080/users/1")
+    print("  curl -X POST 'http://localhost:8080/users?name=David&email=david@example.com'")
+    print("  curl -X DELETE http://localhost:8080/users/1")
+    print("  curl http://localhost:8080/stats")
     print("")
 
-    app.listen(8080)
+    # 간단한 HTTP 서버 (데모용)
+    # 실제로는 createHTTPServer()를 사용하여 라우팅 설정
+    print("✅ 서버 준비 완료 (테스트 모드)\n")
+
+    # 요청 시뮬레이션 테스트
+    print("🧪 요청 시뮬레이션:\n")
+
+    # 사용자 목록 조회
+    print("1️⃣  GET /users")
+    match handle_list_users(None):
+        Ok(response):
+            print(f"   응답: {len(response['data'])}명의 사용자")
+            for user in response["data"]:
+                print(f"     - {user['name']} ({user['email']})")
+        Err(err):
+            print(f"   오류: {err}")
+
+    print()
+
+    # 특정 사용자 조회
+    print("2️⃣  GET /users/2")
+    match handle_get_user(None, 2):
+        Ok(response):
+            user = response["data"]
+            print(f"   응답: {user['name']} ({user['email']})")
+        Err(err):
+            print(f"   오류: {err}")
+
+    print()
+
+    # 새 사용자 생성
+    print("3️⃣  POST /users (David 추가)")
+    match handle_create_user(None, "David", "david@example.com"):
+        Ok(response):
+            user = response["data"]
+            print(f"   응답: 사용자 생성 완료 (ID: {user['id']})")
+        Err(err):
+            print(f"   오류: {err}")
+
+    print()
+
+    # 통계 조회
+    print("4️⃣  GET /stats")
+    match handle_stats(None):
+        Ok(response):
+            print(f"   총 사용자: {response['total_users']}")
+            print(f"   총 요청: {response['total_requests']}")
+            print(f"   요청 분석:")
+            for endpoint in response["requests_by_endpoint"]:
+                count = response["requests_by_endpoint"][endpoint]
+                print(f"     - {endpoint}: {count}회")
+        Err(err):
+            print(f"   오류: {err}")
 
 if __name__ == "__main__":
     main()

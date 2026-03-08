@@ -1,16 +1,40 @@
 #!pyfree:mode=gradual
 """
-PyFree Example 1: Hello World
-가장 간단한 PyFree 프로그램
+PyFree Example 1: Hello World with String Library
+가장 간단한 PyFree 프로그램 - string 라이브러리 활용
 """
+
+from string import upper, lower, capitalize
 
 def greet(name: str) -> str:
     """사용자를 환영하는 함수"""
-    return f"Hello, {name}!"
+    return f"Hello, {capitalize(name)}!"
+
+def format_message(msg: str, style: str) -> str:
+    """메시지를 지정된 스타일로 포맷"""
+    match style:
+        "upper":   upper(msg)
+        "lower":   lower(msg)
+        "title":   capitalize(msg)
+        _:         msg
 
 def main():
-    message = greet("PyFree")
+    # 기본 인사
+    message = greet("pyfree")
     print(message)
+
+    # 다양한 스타일로 표현
+    text = "Welcome to PyFree"
+    print(f"Original: {text}")
+    print(f"UPPERCASE: {upper(text)}")
+    print(f"lowercase: {lower(text)}")
+    print(f"Title Case: {capitalize(text)}")
+
+    # 문자 처리
+    name = "alice"
+    print(f"\n이름: {capitalize(name)}")
+    print(f"대문자: {upper(name)}")
+    print(f"소문자: {lower(name)}")
 
 if __name__ == "__main__":
     main()

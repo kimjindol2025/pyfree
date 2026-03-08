@@ -1,8 +1,10 @@
 #!pyfree:mode=static
 """
-PyFree Example 2: Result<T,E> Pattern Matching
-FreeLang의 결과 타입과 Python의 comprehension 결합
+PyFree Example 2: Result<T,E> Pattern + String Library
+FreeLang의 결과 타입과 string 라이브러리 활용
 """
+
+from string import split, join, upper, lower, strip
 
 def parse_numbers(raw_strings: list[str]) -> Result[list[int], str]:
     """
@@ -13,34 +15,79 @@ def parse_numbers(raw_strings: list[str]) -> Result[list[int], str]:
     parsed = []
 
     for s in raw_strings:
-        if s.isdigit():
-            parsed.append(int(s))
+        s_trimmed = strip(s)
+        # isdigit() 대신 수동 체크
+        is_number = True
+        for c in s_trimmed:
+            if c < "0" or c > "9":
+                is_number = False
+                break
+
+        if is_number and len(s_trimmed) > 0:
+            parsed.append(int(s_trimmed))
 
     if not parsed:
         return Err("유효한 숫자를 찾을 수 없습니다")
 
     return Ok(parsed)
 
-def sum_numbers(data: Result[list[int], str]) -> None:
+def validate_email(email: str) -> Result[str, str]:
+    """이메일 유효성 검사"""
+    email_trimmed = strip(email)
+
+    # @ 기호 포함 확인
+    has_at = False
+    for c in email_trimmed:
+        if c == "@":
+            has_at = True
+            break
+
+    if not has_at:
+        return Err("@ 기호가 없습니다")
+
+    if len(email_trimmed) < 5:
+        return Err("이메일이 너무 짧습니다")
+
+    return Ok(lower(email_trimmed))
+
+def process_result(data: Result[list[int], str]) -> None:
     """Result를 match로 처리"""
     match data:
         Ok(numbers):
             total = sum(numbers)
             print(f"✓ 파싱 성공: {numbers}")
             print(f"  합계: {total}")
+            print(f"  개수: {len(numbers)}")
         Err(msg):
             print(f"✗ 파싱 실패: {msg}")
 
 def main():
-    # 테스트 1: 정상
+    print("=== Result 패턴 매칭 데모 ===\n")
+
+    # 테스트 1: 숫자 파싱 (정상)
+    print("📝 테스트 1: 숫자 파싱")
     result1 = parse_numbers(["1", "hello", "3", "world", "5"])
-    sum_numbers(result1)
+    process_result(result1)
 
     print()
 
-    # 테스트 2: 실패
+    # 테스트 2: 숫자 파싱 (실패)
+    print("📝 테스트 2: 숫자 파싱 (실패)")
     result2 = parse_numbers(["apple", "banana", "cherry"])
-    sum_numbers(result2)
+    process_result(result2)
+
+    print()
+
+    # 테스트 3: 이메일 검증
+    print("📧 테스트 3: 이메일 검증")
+    emails = ["alice@example.com", "bob@test.org", "invalid.email", "carol@work.net"]
+
+    for email in emails:
+        match validate_email(email):
+            Ok(valid_email):
+                print(f"  ✓ {email} → {valid_email}")
+            Err(err):
+                print(f"  ✗ {email}: {err}")
 
 if __name__ == "__main__":
     main()

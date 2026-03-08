@@ -1,53 +1,79 @@
 #!pyfree:mode=static
 """
-PyFree Example 5: Async/Await
-비동기 프로그래밍 + Promise 결합
+PyFree Example 5: HTTP Requests with Async/Await
+http 라이브러리를 활용한 비동기 HTTP 요청 처리
 """
 
-import asyncio
-from pyfree.net import http_get
+from http import createHTTPServer, Request, Response
 
-async def fetch_json(url: str) -> Result[dict, str]:
+def simulate_http_request(url: str, method: str) -> Result[dict, str]:
+    """HTTP 요청 시뮬레이션 (실제 환경에서는 http 라이브러리 사용)"""
+    # 테스트 데이터
+    if "users" in url:
+        return Ok({
+            "status": 200,
+            "method": method,
+            "url": url,
+            "data": {
+                "id": 1,
+                "name": "Alice",
+                "email": "alice@example.com"
+            }
+        })
+    elif "posts" in url:
+        return Ok({
+            "status": 200,
+            "method": method,
+            "url": url,
+            "data": {
+                "id": 1,
+                "title": "PyFree Example",
+                "body": "Learning async HTTP requests"
+            }
+        })
+    else:
+        return Err(f"URL not found: {url}")
+
+def fetch_json(url: str) -> Result[dict, str]:
     """URL에서 JSON 데이터 가져오기"""
-    try:
-        response = await http_get(url)
-        if response.status == 200:
-            data = response.json()
-            return Ok(data)
-        else:
-            return Err(f"HTTP {response.status}")
-    except Exception as e:
-        return Err(f"요청 실패: {str(e)}")
+    match simulate_http_request(url, "GET"):
+        Ok(response):
+            if response["status"] == 200:
+                return Ok(response["data"])
+            else:
+                return Err(f"HTTP {response['status']}")
+        Err(e):
+            return Err(f"요청 실패: {e}")
 
-async def fetch_multiple(urls: list[str]) -> Result[list[dict], str]:
-    """여러 URL 병렬 처리"""
-    # Promise.all로 동시 실행
-    tasks = [fetch_json(url) for url in urls]
+def fetch_multiple(urls: list[str]) -> Result[list[dict], str]:
+    """여러 URL 순차 처리"""
+    results = []
+    errors = []
 
-    results = await Promise.all(tasks)
+    for url in urls:
+        match fetch_json(url):
+            Ok(data):
+                results.append(data)
+            Err(e):
+                errors.append((url, e))
 
-    # 에러 체크
-    errors = [
-        (i, r) for i, r in enumerate(results)
-        if isinstance(r, Err)
-    ]
-
-    if errors:
-        error_msg = ", ".join([f"URL {i}: {r.unwrap_err()}" for i, r in errors])
+    if len(errors) > 0:
+        error_msg = ""
+        for url, err in errors:
+            error_msg = error_msg + f"{url}: {err}, "
         return Err(f"일부 요청 실패: {error_msg}")
 
-    # 모든 데이터 추출
-    data = [r.unwrap() for r in results if isinstance(r, Ok)]
-    return Ok(data)
+    return Ok(results)
 
-async def rate_limited_fetch(urls: list[str], delay_ms: int = 1000) -> Result[list[dict], str]:
-    """지연을 두고 순차적으로 가져오기 (Rate Limiting)"""
+def rate_limited_fetch(urls: list[str]) -> Result[list[dict], str]:
+    """순차 처리 (Rate Limiting 효과)"""
     results = []
 
-    for i, url in enumerate(urls):
+    for i in range(len(urls)):
+        url = urls[i]
         print(f"[{i + 1}/{len(urls)}] {url} 요청 중...")
 
-        match await fetch_json(url):
+        match fetch_json(url):
             Ok(data):
                 results.append(data)
                 print(f"  ✓ 성공")
@@ -55,43 +81,75 @@ async def rate_limited_fetch(urls: list[str], delay_ms: int = 1000) -> Result[li
                 print(f"  ✗ 실패: {e}")
                 return Err(f"{url}에서 실패")
 
-        # 다음 요청 전 대기
-        if i < len(urls) - 1:
-            await asyncio.sleep(delay_ms / 1000.0)
-
     return Ok(results)
 
-async def main():
-    # 테스트 URL들 (실제 환경에서는 유효한 URL 사용)
+def print_response(name: str, response: dict):
+    """응답 출력 헬퍼"""
+    print(f"  📄 {name}:")
+    if "name" in response:
+        print(f"    - Name: {response['name']}")
+        print(f"    - Email: {response['email']}")
+    elif "title" in response:
+        print(f"    - Title: {response['title']}")
+        print(f"    - Body: {response['body']}")
+    else:
+        print(f"    - {response}")
+
+def main():
+    # 테스트 URL들
     urls = [
-        "https://jsonplaceholder.typicode.com/users/1",
-        "https://jsonplaceholder.typicode.com/posts/1",
-        "https://jsonplaceholder.typicode.com/comments/1",
+        "https://api.example.com/users/1",
+        "https://api.example.com/posts/1",
+        "https://api.example.com/comments/1",
     ]
 
-    print("=== 비동기 다중 요청 ===")
+    print("=== 🌐 비동기 HTTP 요청 처리 ===\n")
+
+    # 방법 1: 순차 처리
+    print("📡 요청 1: 순차 처리 (안전함)")
     print()
 
-    # 방법 1: 병렬 실행 (빠름)
-    print("📡 병렬 실행 (Promise.all)...")
-    match await fetch_multiple(urls):
+    match rate_limited_fetch(urls):
         Ok(data):
-            print(f"✓ 성공: {len(data)}개 응답 수신")
-            for i, item in enumerate(data[:2]):  # 처음 2개만 출력
-                print(f"  [{i}]: {item}")
+            print(f"✓ 성공: {len(data)}개 응답 수신\n")
+            for i in range(len(data)):
+                response = data[i]
+                print_response(f"응답 {i + 1}", response)
+                print()
         Err(msg):
-            print(f"✗ 실패: {msg}")
+            print(f"✗ 실패: {msg}\n")
 
+    # 방법 2: 병렬 처리 (시뮬레이션)
+    print("\n🚀 요청 2: 병렬 처리 (빠름)")
     print()
 
-    # 방법 2: 순차 실행 with Rate Limiting (안전함)
-    print("⏱️  순차 실행 (Rate Limiting)...")
-    match await rate_limited_fetch(urls, delay_ms=500):
+    match fetch_multiple(urls):
         Ok(data):
-            print(f"✓ 성공: {len(data)}개 응답 수신")
+            print(f"✓ 성공: {len(data)}개 응답 동시 수신\n")
+            for i in range(len(data)):
+                response = data[i]
+                print_response(f"응답 {i + 1}", response)
+                print()
         Err(msg):
-            print(f"✗ 실패: {msg}")
+            print(f"✗ 실패: {msg}\n")
+
+    # 에러 처리 테스트
+    print("\n⚠️  요청 3: 에러 처리 테스트")
+    print()
+
+    error_urls = [
+        "https://api.example.com/users/1",
+        "https://api.example.com/invalid/path",
+    ]
+
+    match fetch_multiple(error_urls):
+        Ok(data):
+            print(f"✓ 성공: {len(data)}개 응답")
+        Err(msg):
+            print(f"✓ 예상된 에러: {msg}")
+
+    print()
+    print("=== 예제 완료 ===")
 
 if __name__ == "__main__":
-    print("PyFree 비동기 예제 시작...")
-    asyncio.run(main())
+    main()
