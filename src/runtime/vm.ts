@@ -26,6 +26,8 @@ interface Frame {
   registers: PyFreeValue[];
   locals: Map<string, PyFreeValue>;
   returnValue?: PyFreeValue;
+  returnResultReg?: number;        // 반환값 저장할 호출자 레지스터
+  callerRegisters?: PyFreeValue[]; // 호출자 레지스터 배열 참조
 }
 
 /**
@@ -103,7 +105,9 @@ export class VM {
     switch (instr.op) {
       // 상수
       case Opcode.LOAD_CONST:
-        frame.registers[aNum] = this.program.constants[bNum];
+        // 함수 전용 상수 풀 우선, 없으면 메인 프로그램 상수 사용
+        const constants = frame.function?.constants || this.program.constants;
+        frame.registers[aNum] = constants[bNum];
         break;
 
       case Opcode.LOAD_GLOBAL:
@@ -397,6 +401,8 @@ export class VM {
         pc: 0,
         registers: new Array(256),
         locals: new Map(),
+        returnResultReg: resultReg,       // 반환값 목적지 저장
+        callerRegisters: frame.registers, // 호출자 레지스터 참조
       };
 
       // 파라미터 전달
@@ -410,17 +416,21 @@ export class VM {
 
   /**
    * 함수에서 반환
+   * ✅ Phase 9: 올바른 레지스터에 반환값 저장
    */
   private returnFromFunction(frame: Frame, valueIdx: number): void {
     const returnValue = frame.registers[valueIdx];
+    const resultReg = frame.returnResultReg;
+    const callerRegisters = frame.callerRegisters;
 
     this.frameStack.pop();
 
-    if (this.frameStack.length > 0) {
-      const callerFrame = this.frameStack[this.frameStack.length - 1];
-      // 반환 값을 호출자의 레지스터에 저장
-      // (정확한 위치는 호출 인스트럭션이 결정)
-      callerFrame.registers[0] = returnValue;
+    // 호출자의 올바른 레지스터에 반환값 저장
+    if (callerRegisters !== undefined && resultReg !== undefined) {
+      callerRegisters[resultReg] = returnValue;
+    } else if (this.frameStack.length > 0) {
+      // 폴백: 이전 방식 (호환성)
+      this.frameStack[this.frameStack.length - 1].registers[0] = returnValue;
     }
   }
 

@@ -164,6 +164,7 @@ export interface IRFunction {
   paramCount: number;
   localCount: number;
   code: Instruction[];
+  constants: any[];        // 함수 전용 상수 풀
   isAsync: boolean;
   paramNames: string[];
 }
@@ -353,6 +354,13 @@ export class IRBuilder {
   }
 
   /**
+   * 상수 풀 반환
+   */
+  getConstants(): any[] {
+    return this.constants;
+  }
+
+  /**
    * 코드 출력 (디버그)
    */
   toString(): string {
@@ -377,7 +385,7 @@ export class IRBuilder {
  * IR 컴파일러 (AST → IR)
  */
 export class IRCompiler {
-  private builder: IRBuilder;
+  private builderStack: IRBuilder[];  // 빌더 스택 (함수별 코드 분리)
   private allocator: RegisterAllocator; // 레지스터 할당자 (버그 수정)
   private symbols: Map<string, { register?: number; index?: undefined; isGlobal: boolean; globalName?: string }> = new Map();
   private localVars: string[] = [];
@@ -385,8 +393,15 @@ export class IRCompiler {
   private currentFunction: any = null;
   private functions: Map<string, IRFunction> = new Map();
 
+  /**
+   * 현재 빌더 접근 (스택 최상위)
+   */
+  private get builder(): IRBuilder {
+    return this.builderStack[this.builderStack.length - 1];
+  }
+
   constructor() {
-    this.builder = new IRBuilder();
+    this.builderStack = [new IRBuilder()];  // 메인 빌더로 초기화
     this.allocator = new RegisterAllocator(); // 초기화
   }
 
@@ -501,51 +516,74 @@ export class IRCompiler {
 
   /**
    * 함수 정의 컴파일
+   * ✅ Phase 9: 다중 빌더 아키텍처 - 함수 코드를 별도 버퍼에 캡처
    */
   private compileFunctionDef(stmt: any): void {
     const funcName = stmt.name;
     const paramCount = stmt.params ? stmt.params.length : 0;
     const paramNames = stmt.params ? stmt.params.map((p: any) => p.name) : [];
 
-    // 함수 심볼 등록 (전역)
-    const funcReg = this.allocRegister();
-    this.registerSymbol(funcName, true, funcReg);
+    // Step 1: 함수 전용 빌더 생성 및 컨텍스트 전환
+    const funcBuilder = new IRBuilder();
+    this.builderStack.push(funcBuilder);
 
-    // 함수 코드 빌드
+    // Step 2: 파라미터와 심볼 설정
     const oldLocalVars = this.localVars;
     this.localVars = [...paramNames];
     const oldSymbols = new Map(this.symbols);
     this.symbols.clear();
 
-    // 파라미터를 로컬 변수로 등록
     paramNames.forEach((name: string, index: number) => {
       this.registerSymbol(name, false, index);
     });
 
-    const functionStartOffset = this.builder.getCurrentOffset();
+    // Step 3: 함수 본문 컴파일 (funcBuilder에 emit)
     for (const bodyStmt of stmt.body) {
       this.compileStatement(bodyStmt);
     }
 
-    // 함수 끝에 None 반환 (명시적 return이 없으면)
-    const noneReg = this.allocRegister();
-    this.builder.emit(Opcode.LOAD_NONE, [noneReg]);
-    this.builder.emit(Opcode.RETURN, [noneReg]);
+    // 명시적 return 없으면 None 반환 (마지막이 RETURN이 아닐 때만)
+    const lastInstr = funcBuilder.code[funcBuilder.code.length - 1];
+    if (!lastInstr || lastInstr.op !== Opcode.RETURN) {
+      const noneReg = this.allocRegister();
+      funcBuilder.emit(Opcode.LOAD_NONE, [noneReg]);
+      funcBuilder.emit(Opcode.RETURN, [noneReg]);
+      this.freeRegister(noneReg);
+    }
 
-    // 함수 메타데이터 저장
+    // Step 4: 함수 코드/상수 캡처 후 빌더 복원
+    const funcCode = [...funcBuilder.code];
+    const funcConstants = funcBuilder.getConstants();
+    this.builderStack.pop();  // funcBuilder 제거 (메인 빌더로 복원)
+
+    // Step 5: IRFunction 객체 생성 (코드 + 상수 포함!)
     const irFunction: IRFunction = {
       name: funcName,
       paramCount,
       localCount: this.localVars.length,
-      code: [],
+      code: funcCode,
+      constants: funcConstants,  // 함수 전용 상수
       isAsync: stmt.isAsync || false,
       paramNames,
     };
-    this.functions.set(funcName, irFunction);
 
     // 심볼 복원
     this.symbols = oldSymbols;
     this.localVars = oldLocalVars;
+
+    // Step 6: 메인 코드에 함수 등록
+    // IRFunction을 상수 풀에 추가 후 전역 변수로 저장
+    const funcConstIdx = this.builder.addConstant(irFunction);
+    const funcReg = this.allocRegister();
+    this.builder.emit(Opcode.LOAD_CONST, [funcReg, funcConstIdx]);
+    this.builder.emit(Opcode.STORE_GLOBAL, [funcName, funcReg]);
+    this.freeRegister(funcReg);
+
+    // 심볼 테이블에 등록 (전역 함수)
+    this.registerSymbol(funcName, true, undefined, funcName);
+
+    // 함수 맵에 저장
+    this.functions.set(funcName, irFunction);
   }
 
   /**
@@ -956,7 +994,23 @@ export class IRCompiler {
    */
   private compileLiteral(expr: any): number {
     const resultReg = this.allocRegister();
-    const value = expr.value;
+    let value = expr.value;
+
+    // ✅ Phase 9: 렉서가 숫자를 문자열로 저장하므로 타입에 따라 변환
+    if (expr.valueType === 'number') {
+      // 16진수, 8진수, 2진수 처리
+      if (value.startsWith('0x')) {
+        value = parseInt(value, 16);
+      } else if (value.startsWith('0o')) {
+        value = parseInt(value, 8);
+      } else if (value.startsWith('0b')) {
+        value = parseInt(value, 2);
+      } else if (value.includes('.')) {
+        value = parseFloat(value);
+      } else {
+        value = parseInt(value, 10);
+      }
+    }
 
     if (value === null) {
       this.builder.emit(Opcode.LOAD_NONE, [resultReg]);
@@ -1005,7 +1059,7 @@ export class IRCompiler {
     const resultReg = this.allocRegister();
     const leftReg = this.compileExpression(expr.left);
     const rightReg = this.compileExpression(expr.right);
-    const op = expr.op;
+    const op = expr.operator || expr.op;  // AST는 'operator', 일부 코드는 'op' 사용
 
     switch (op) {
       case '+':
@@ -1068,7 +1122,7 @@ export class IRCompiler {
   private compileUnaryOp(expr: any): number {
     const resultReg = this.allocRegister();
     const operandReg = this.compileExpression(expr.operand);
-    const op = expr.op;
+    const op = expr.operator || expr.op;  // AST는 'operator', 일부 코드는 'op' 사용
 
     switch (op) {
       case '-':
@@ -1118,16 +1172,33 @@ export class IRCompiler {
 
       // 인자를 컴파일하여 결과를 argReg에 직접 로드
       if (actualArg.type === 'Literal') {
-        const constIdx = this.builder.addConstant(actualArg.value);
+        // ✅ Phase 9: 리터럴 타입 변환
+        let constValue = actualArg.value;
+        if (actualArg.valueType === 'number') {
+          if (constValue.startsWith('0x')) {
+            constValue = parseInt(constValue, 16);
+          } else if (constValue.startsWith('0o')) {
+            constValue = parseInt(constValue, 8);
+          } else if (constValue.startsWith('0b')) {
+            constValue = parseInt(constValue, 2);
+          } else if (constValue.includes('.')) {
+            constValue = parseFloat(constValue);
+          } else {
+            constValue = parseInt(constValue, 10);
+          }
+        }
+        const constIdx = this.builder.addConstant(constValue);
         this.builder.emit(Opcode.LOAD_CONST, [argReg, constIdx]);
       } else if (actualArg.type === 'Identifier') {
         const symbol = this.lookupSymbol(actualArg.name);
         if (symbol && !symbol.isGlobal && symbol.register !== undefined) {
           // ✅ 버그 수정 (2026-03-09): LOAD_FAST에 변수 이름 전달
           this.builder.emit(Opcode.LOAD_FAST, [argReg, actualArg.name]);
-        } else if (symbol && symbol.isGlobal && symbol.index !== undefined) {
-          this.builder.emit(Opcode.LOAD_GLOBAL, [argReg, symbol.index]);
+        } else if (symbol && symbol.isGlobal && symbol.globalName) {
+          // 전역 변수: globalName으로 참조
+          this.builder.emit(Opcode.LOAD_GLOBAL, [argReg, symbol.globalName]);
         } else {
+          // 심볼 없음 또는 미해결 참조
           this.builder.emit(Opcode.LOAD_NONE, [argReg]);
         }
       } else {

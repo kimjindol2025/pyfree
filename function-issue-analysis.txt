@@ -1,0 +1,108 @@
+# PyFree 함수 호출 아키텍처 문제 분석
+
+## 현재 상황
+1. DEF 파싱: ✅ 완료
+2. IR 컴파일: 부분 구현 (구조적 문제)
+3. VM 호출: ✅ Frame 기반 준비됨
+
+## 근본 문제: 단일 Instruction Stream
+
+현재 구조:
+```
+IRCompiler (ONE builder)
+    ↓
+main instruction stream
+    ├─ func def code (inlined)
+    ├─ main program code
+    └─ func call code (no-op, func wasn't stored)
+```
+
+결과: 함수가 호출되지 않음 (정의도 실행되지 않음)
+
+## 필요한 아키텍처: 분리된 Function Bytecode
+
+목표 구조:
+```
+IRCompiler
+    ├─ Main Builder
+    │   ├─ main program code
+    │   └─ CALL 명령어 (funcName, args)
+    │
+    └─ Function Builders (per function)
+        ├─ add() bytecode
+        ├─ factorial() bytecode
+        └─ helper() bytecode
+        
+IRProgram
+    ├─ code: main bytecode
+    ├─ functions: {
+    │   "add": { code: [bytecode], paramCount: 2, paramNames: [...] },
+    │   "factorial": { code: [...] }
+    │ }
+    └─ constants: [...]
+
+VM 실행 흐름:
+1. 메인 프로그램 실행 (main code)
+2. CALL 만나면 → functions["funcName"] 찾기
+3. 새 Frame 생성, 함수의 bytecode 로드
+4. 함수 실행 후 결과 반환
+```
+
+## 구현 전략
+
+### Step 1: IRBuilder 분리 (현재 1개 → N+1개)
+- 메인 빌더: 프로그램 코드
+- 함수 빌더: 각 함수별 (동적 생성)
+
+### Step 2: 함수 컴파일 시점 변경
+- 함수 이름만 등록 (global)
+- 함수 바디는 별도 builder에 컴파일
+- 함수 객체를 globals에 저장 (IRFunction)
+
+### Step 3: CALL 명령어 재설계
+- 형식: CALL [result, funcReg, argc, arg1, ...]
+- 함수 타입 체크:
+  * typeof === 'function' → 네이티브 (print, len 등)
+  * object with code → IR 함수 (새 Frame 필요)
+
+### Step 4: VM 프레임 관리
+- 프레임 스택에 함수 Frame 추가 (이미 구현됨)
+- 함수 반환 시 Frame pop (이미 구현됨)
+
+## 코드 변화 요약
+
+| 파일 | 함수 | 변화 |
+|------|------|------|
+| ir.ts | IRCompiler.compileFunctionDef | 별도 builder 생성, code 캡처 |
+| ir.ts | IRCompiler.compile | 함수 metadata를 globals에 저장 |
+| vm.ts | callFunctionNew | 이미 구현됨, 수정 불필요 ✅ |
+
+## 예상 도전 과제
+
+1. **함수 호이스팅**: 함수는 모든 곳에서 호출 가능해야 함
+2. **재귀 호출**: 함수가 자기 자신을 호출 가능
+3. **클로저**: 함수가 외부 변수 참조 (Phase 10)
+4. **고차 함수**: 함수를 반환값으로 사용 (Phase 10)
+
+## 성공 기준
+
+✅ 기본 함수 정의/호출
+✅ 매개변수 전달
+✅ 반환값
+✅ 재귀 함수 (factorial)
+✅ 여러 함수 동시 정의
+
+예상 코드:
+```python
+def add(a, b):
+    return a + b
+
+def factorial(n):
+    if n <= 1:
+        return 1
+    else:
+        return n * factorial(n - 1)
+
+print(add(3, 4))              # 7
+print(factorial(5))           # 120
+```
