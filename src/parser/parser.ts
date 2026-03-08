@@ -51,6 +51,13 @@ export class PyFreeParser {
 
     if (!token || token.type === TokenType.EOF) return null;
 
+    // export 키워드 확인
+    let isExport = false;
+    if (this.check(TokenType.EXPORT)) {
+      isExport = true;
+      this.advance();
+    }
+
     // 데코레이터 파싱
     const decorators: AST.Decorator[] = [];
     while (this.match(TokenType.AT)) {
@@ -59,29 +66,39 @@ export class PyFreeParser {
 
     // Python def 함수
     if (this.check(TokenType.DEF)) {
-      return this.parseFunctionDef(decorators, false);
+      const stmt = this.parseFunctionDef(decorators, false);
+      if (isExport) stmt.isExport = true;
+      return stmt;
     }
 
     // async def
     if (this.check(TokenType.ASYNC) && this.peekAhead(1)?.type === TokenType.DEF) {
       this.advance(); // async 건너뛰기
-      return this.parseFunctionDef(decorators, true);
+      const stmt = this.parseFunctionDef(decorators, true);
+      if (isExport) stmt.isExport = true;
+      return stmt;
     }
 
     // FreeLang fn 함수
     if (this.check(TokenType.FN)) {
-      return this.parseFreeLangFunction(decorators, false);
+      const stmt = this.parseFreeLangFunction(decorators, false);
+      if (isExport) stmt.isExport = true;
+      return stmt;
     }
 
     // async fn
     if (this.check(TokenType.ASYNC) && this.peekAhead(1)?.type === TokenType.FN) {
       this.advance();
-      return this.parseFreeLangFunction(decorators, true);
+      const stmt = this.parseFreeLangFunction(decorators, true);
+      if (isExport) stmt.isExport = true;
+      return stmt;
     }
 
     // 클래스
     if (this.check(TokenType.CLASS)) {
-      return this.parseClassDef(decorators);
+      const stmt = this.parseClassDef(decorators);
+      if (isExport) stmt.isExport = true;
+      return stmt;
     }
 
     // If 문
@@ -158,7 +175,7 @@ export class PyFreeParser {
       const operator = this.getAssignmentOperator();
       this.advance();
       const value = this.parseExpression();
-      return {
+      const stmt = {
         type: 'AssignmentStatement',
         target: expr,
         operator,
@@ -166,6 +183,9 @@ export class PyFreeParser {
         line: expr.line,
         column: expr.column,
       } as AST.AssignmentStatement;
+
+      if (isExport) stmt.isExport = true;
+      return stmt;
     }
 
     return {

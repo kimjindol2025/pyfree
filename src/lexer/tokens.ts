@@ -54,6 +54,7 @@ export enum TokenType {
   MATCH = 'MATCH',          // match
   LET = 'LET',              // let (변수)
   CONST = 'CONST',          // const
+  EXPORT = 'EXPORT',        // export
 
   // 타입 (120-129)
   RESULT = 'RESULT',        // Result<T, E>
@@ -196,6 +197,7 @@ export const FREELANG_KEYWORDS = new Map<string, TokenType>([
   ['match', TokenType.MATCH],
   ['let', TokenType.LET],
   ['const', TokenType.CONST],
+  ['export', TokenType.EXPORT],
   ['Result', TokenType.RESULT],
   ['Option', TokenType.OPTION],
   ['Ok', TokenType.OK],

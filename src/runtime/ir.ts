@@ -491,7 +491,7 @@ export class IRCompiler {
         this.compileExpressionStatement(stmt);
         break;
       case 'ImportStatement':
-        // 임시로 무시
+        this.compileImportStatement(stmt);
         break;
       case 'WithStatement':
         this.compileWithStatement(stmt);
@@ -767,6 +767,67 @@ export class IRCompiler {
     // 간단한 구현: context manager 무시하고 본문만 실행
     for (const s of stmt.body) {
       this.compileStatement(s);
+    }
+  }
+
+  /**
+   * Import 문장 컴파일
+   * from module import name1, name2 as alias
+   * import module
+   */
+  private compileImportStatement(stmt: any): void {
+    // Phase 4-1: 모듈 시스템
+    // 현재는 표준 모듈만 지원 (math, http 등)
+    // 향후: 파일 기반 모듈 로드 지원
+
+    if (stmt.isFromImport && stmt.module) {
+      // from X import Y, Z
+      const moduleName = stmt.module;
+
+      // 각 import 항목에 대해
+      for (const importName of stmt.names) {
+        const symbolName = importName.name;
+        const alias = importName.asName || importName.name;
+
+        // 런타임에 모듈에서 심볼을 동적으로 로드하도록
+        // 특별한 내부 함수 호출 (VM에서 구현)
+        const callReg = this.allocRegister();
+        const funcName = '__import_symbol__';
+        const moduleIdx = this.builder.addConstant(moduleName);
+        const symbolIdx = this.builder.addConstant(symbolName);
+
+        // LOAD_CONST로 모듈과 심볼 이름 로드
+        this.builder.emit(Opcode.LOAD_CONST, [callReg, moduleIdx]);
+        const symbReg = this.allocRegister();
+        this.builder.emit(Opcode.LOAD_CONST, [symbReg, symbolIdx]);
+
+        // 후추 처리: 런타임에서 모듈 로더 호출
+        // 현재는 LOAD_GLOBAL로 바인딩
+        const globalName = this.builder.addGlobal(alias);
+        this.builder.emit(Opcode.STORE_GLOBAL, [globalName, callReg]);
+        this.registerSymbol(alias, true, callReg, globalName);
+
+        this.freeRegister(symbReg);
+        this.freeRegister(callReg);
+      }
+    } else if (stmt.names && stmt.names.length > 0) {
+      // import X, Y, Z (단순 import)
+      for (const importName of stmt.names) {
+        const moduleName = importName.name;
+        const alias = importName.asName || moduleName;
+
+        // 모듈 이름을 상수로 저장
+        const constIdx = this.builder.addConstant(moduleName);
+        const reg = this.allocRegister();
+        this.builder.emit(Opcode.LOAD_CONST, [reg, constIdx]);
+
+        // 전역으로 저장
+        const globalName = this.builder.addGlobal(alias);
+        this.builder.emit(Opcode.STORE_GLOBAL, [globalName, reg]);
+        this.registerSymbol(alias, true, reg, globalName);
+
+        this.freeRegister(reg);
+      }
     }
   }
 

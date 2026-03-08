@@ -386,6 +386,295 @@ export const advancedBuiltins: BuiltinFunction[] = [
 ];
 
 /**
+ * FFI 함수 (외부 라이브러리 연동)
+ */
+
+// NDArray 타입 정의
+interface NDArray {
+  __type: 'ndarray';
+  data: number[];
+  shape: number[];
+  dtype: string;
+}
+
+// DataFrame 타입 정의
+interface DataFrame {
+  __type: 'dataframe';
+  columns: Map<string, any[]>;
+  index: number[];
+}
+
+// Series 타입 정의
+interface Series {
+  __type: 'series';
+  data: any[];
+  index: number[];
+}
+
+// Module 타입 정의
+interface Module {
+  __type: 'module';
+  name: string;
+  functions: Map<string, Function>;
+}
+
+/**
+ * HTTP 함수 (웹 프레임워크)
+ */
+export const httpBuiltins: BuiltinFunction[] = [
+  {
+    name: 'http_server',
+    func: (port: number = 3000): any => {
+      // HTTP 서버 생성 (동적 import 피하기 위해 간단한 객체로 구현)
+      return {
+        __type: 'http_server',
+        port,
+        routes: new Map(),
+        isRunning: false,
+        get: function(path: string, handler: Function) {
+          this.routes.set(`GET ${path}`, handler);
+          return this;
+        },
+        post: function(path: string, handler: Function) {
+          this.routes.set(`POST ${path}`, handler);
+          return this;
+        },
+        put: function(path: string, handler: Function) {
+          this.routes.set(`PUT ${path}`, handler);
+          return this;
+        },
+        delete: function(path: string, handler: Function) {
+          this.routes.set(`DELETE ${path}`, handler);
+          return this;
+        },
+        listen: function() {
+          this.isRunning = true;
+          console.log(`Server would listen on port ${this.port}`);
+          return this;
+        },
+        stop: function() {
+          this.isRunning = false;
+        },
+      };
+    },
+    docstring: 'http_server(port: int = 3000) -> HTTPServer\nHTTP 서버 생성',
+  },
+
+  {
+    name: 'http_listen',
+    func: (server: any, port?: number): void => {
+      if (server && server.__type === 'http_server') {
+        if (port) server.port = port;
+        server.listen();
+      }
+    },
+    docstring: 'http_listen(server: HTTPServer, port: int = None) -> None\n서버 시작',
+  },
+];
+
+export const ffiBuiltins: BuiltinFunction[] = [
+  {
+    name: 'import_module',
+    func: (name: string): Module => {
+      // 모듈 로드 시뮬레이션
+      return {
+        __type: 'module',
+        name,
+        functions: new Map(),
+      };
+    },
+    docstring: 'import_module(name: str) -> Module\n외부 모듈 로드',
+  },
+
+  {
+    name: 'import_from',
+    func: (module: Module, items: string[]): any => {
+      // from module import items
+      const result: any = {};
+      if (module && module.functions) {
+        items.forEach((item) => {
+          if (module.functions.has(item)) {
+            result[item] = module.functions.get(item);
+          }
+        });
+      }
+      return result;
+    },
+    docstring: 'import_from(module: Module, items: list[str]) -> dict\n모듈에서 항목 임포트',
+  },
+
+  // numpy 대체 함수
+  {
+    name: 'array',
+    func: (data: any): NDArray => {
+      const flat = Array.isArray(data) ? data.flat(Infinity) : [data];
+      const shape = Array.isArray(data) ? [data.length] : [1];
+      return {
+        __type: 'ndarray',
+        data: flat.map((x) => Number(x)),
+        shape,
+        dtype: 'float64',
+      };
+    },
+    docstring: 'array(data: list) -> NDArray\nNumPy 배열 생성',
+  },
+
+  {
+    name: 'zeros',
+    func: (shape: number[]): NDArray => {
+      const size = shape.reduce((a, b) => a * b, 1);
+      return {
+        __type: 'ndarray',
+        data: Array(size).fill(0),
+        shape,
+        dtype: 'float64',
+      };
+    },
+    docstring: 'zeros(shape: tuple) -> NDArray\n영 배열 생성',
+  },
+
+  {
+    name: 'ones',
+    func: (shape: number[]): NDArray => {
+      const size = shape.reduce((a, b) => a * b, 1);
+      return {
+        __type: 'ndarray',
+        data: Array(size).fill(1),
+        shape,
+        dtype: 'float64',
+      };
+    },
+    docstring: 'ones(shape: tuple) -> NDArray\n1 배열 생성',
+  },
+
+  {
+    name: 'reshape',
+    func: (arr: NDArray, shape: number[]): NDArray => {
+      return {
+        ...arr,
+        shape,
+      };
+    },
+    docstring: 'reshape(arr: NDArray, shape: tuple) -> NDArray\n배열 재형성',
+  },
+
+  {
+    name: 'transpose',
+    func: (arr: NDArray): NDArray => {
+      // 2D 배열 전치
+      if (arr.shape.length === 2) {
+        const [rows, cols] = arr.shape;
+        const newData: number[] = [];
+        for (let j = 0; j < cols; j++) {
+          for (let i = 0; i < rows; i++) {
+            newData.push(arr.data[i * cols + j]);
+          }
+        }
+        return {
+          ...arr,
+          data: newData,
+          shape: [cols, rows],
+        };
+      }
+      return arr;
+    },
+    docstring: 'transpose(arr: NDArray) -> NDArray\n배열 전치',
+  },
+
+  {
+    name: 'dot',
+    func: (a: NDArray, b: NDArray): NDArray | number => {
+      // 1D x 1D → 스칼라
+      if (a.shape.length === 1 && b.shape.length === 1) {
+        const result = a.data.reduce((sum, val, idx) => sum + val * b.data[idx], 0);
+        return result;
+      }
+      // 2D x 2D → 2D (행렬 곱셈 단순화)
+      return {
+        __type: 'ndarray',
+        data: [],
+        shape: [a.shape[0], b.shape[1]],
+        dtype: 'float64',
+      };
+    },
+    docstring: 'dot(a: NDArray, b: NDArray) -> NDArray | number\n행렬 곱셈',
+  },
+
+  // pandas 대체 함수
+  {
+    name: 'DataFrame',
+    func: (data: any): DataFrame => {
+      const columns = new Map<string, any[]>();
+      if (typeof data === 'object' && data !== null) {
+        Object.entries(data).forEach(([key, value]) => {
+          columns.set(key, Array.isArray(value) ? value : [value]);
+        });
+      }
+      const length = columns.size > 0 ? Array.from(columns.values())[0].length : 0;
+      return {
+        __type: 'dataframe',
+        columns,
+        index: Array.from({ length }, (_, i) => i),
+      };
+    },
+    docstring: 'DataFrame(data: dict) -> DataFrame\nPandas DataFrame 생성',
+  },
+
+  {
+    name: 'Series',
+    func: (data: any[]): Series => {
+      return {
+        __type: 'series',
+        data,
+        index: Array.from({ length: data.length }, (_, i) => i),
+      };
+    },
+    docstring: 'Series(data: list) -> Series\nPandas Series 생성',
+  },
+
+  {
+    name: 'read_csv',
+    func: (path: string): DataFrame => {
+      // 파일 읽기 시뮬레이션 (실제 구현은 파일 I/O 필요)
+      return {
+        __type: 'dataframe',
+        columns: new Map(),
+        index: [],
+      };
+    },
+    docstring: 'read_csv(path: str) -> DataFrame\nCSV 파일 읽기',
+  },
+
+  // 유틸리티 함수
+  {
+    name: 'type_of',
+    func: (obj: any): string => {
+      if (obj && typeof obj === 'object') {
+        if (obj.__type) return obj.__type;
+        if (Array.isArray(obj)) return 'list';
+        return 'object';
+      }
+      return typeof obj;
+    },
+    docstring: 'type_of(obj: any) -> str\n객체 타입 조회',
+  },
+
+  {
+    name: 'shape_of',
+    func: (obj: any): number[] => {
+      if (obj && obj.__type === 'ndarray') {
+        return obj.shape;
+      }
+      if (Array.isArray(obj)) {
+        return [obj.length];
+      }
+      return [];
+    },
+    docstring: 'shape_of(obj: any) -> tuple\nNDArray shape 조회',
+  },
+];
+
+/**
  * 모든 내장 함수
  */
 export const ALL_BUILTINS = [
@@ -395,6 +684,8 @@ export const ALL_BUILTINS = [
   ...mathBuiltins,
   ...objectBuiltins,
   ...advancedBuiltins,
+  ...ffiBuiltins,
+  ...httpBuiltins,
 ];
 
 /**

@@ -59,6 +59,7 @@ export interface FunctionDef extends ASTNode {
   body: Statement[];
   decorators: Decorator[];
   isAsync: boolean;
+  isExport?: boolean;
 }
 
 /**
@@ -73,6 +74,7 @@ export interface FreeLangFunction extends ASTNode {
   body: Statement[];
   decorators: Decorator[];
   isAsync: boolean;
+  isExport?: boolean;
 }
 
 /**
@@ -87,6 +89,7 @@ export interface ClassDef extends ASTNode {
   body: Statement[];
   decorators: Decorator[];
   isDataclass?: boolean;
+  isExport?: boolean;
 }
 
 /**
@@ -243,6 +246,7 @@ export interface AssignmentStatement extends ASTNode {
   target: Expression;
   operator: 'assign' | 'plus_assign' | 'minus_assign' | 'star_assign' | 'slash_assign';
   value: Expression;
+  isExport?: boolean;
 }
 
 /**
