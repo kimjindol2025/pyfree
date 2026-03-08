@@ -9,6 +9,66 @@
  */
 
 /**
+ * 레지스터 할당자
+ * 사용 가능한 레지스터를 추적하고 효율적으로 할당
+ *
+ * 버그 수정 (2026-03-08):
+ * - 문제: allocRegister()가 중복 레지스터 반환
+ * - 해결: RegisterAllocator로 할당 추적
+ */
+export class RegisterAllocator {
+  private allocated: Set<number> = new Set();
+  private maxRegister: number = 256;
+  private spillStart: number = 200; // 함수 호출 인자용 예약 영역
+
+  /**
+   * 새로운 레지스터 할당
+   */
+  allocate(): number {
+    for (let i = 0; i < this.spillStart; i++) {
+      if (!this.allocated.has(i)) {
+        this.allocated.add(i);
+        return i;
+      }
+    }
+    throw new Error(`레지스터 부족 (0-${this.spillStart - 1})`);
+  }
+
+  /**
+   * 특정 용도용 레지스터 할당 (함수 호출 인자)
+   */
+  allocateForCall(index: number): number {
+    const reg = this.spillStart + index;
+    if (reg >= this.maxRegister) {
+      throw new Error(`함수 호출 인자 레지스터 부족 (index=${index})`);
+    }
+    this.allocated.add(reg);
+    return reg;
+  }
+
+  /**
+   * 레지스터 해제
+   */
+  free(reg: number): void {
+    this.allocated.delete(reg);
+  }
+
+  /**
+   * 사용 가능한 레지스터 개수
+   */
+  available(): number {
+    return this.spillStart - this.allocated.size;
+  }
+
+  /**
+   * 모든 레지스터 해제
+   */
+  reset(): void {
+    this.allocated.clear();
+  }
+}
+
+/**
  * IR 명령어 (Opcode)
  */
 export enum Opcode {
@@ -235,7 +295,7 @@ export class IRBuilder {
     this.emit(Opcode.LOAD_CONST, [dst, constIdx]);
   }
 
-  emitLoadGlobal(dst: number, nameIdx: number): void {
+  emitLoadGlobal(dst: number, nameIdx: number | string): void {
     this.emit(Opcode.LOAD_GLOBAL, [dst, nameIdx]);
   }
 
@@ -243,7 +303,7 @@ export class IRBuilder {
     this.emit(Opcode.LOAD_FAST, [dst, varIdx]);
   }
 
-  emitStoreGlobal(nameIdx: number, value: number): void {
+  emitStoreGlobal(nameIdx: number | string, value: number): void {
     this.emit(Opcode.STORE_GLOBAL, [nameIdx, value]);
   }
 
@@ -318,7 +378,7 @@ export class IRBuilder {
  */
 export class IRCompiler {
   private builder: IRBuilder;
-  private nextRegister: number = 0;
+  private allocator: RegisterAllocator; // 레지스터 할당자 (버그 수정)
   private symbols: Map<string, { register?: number; index?: undefined; isGlobal: boolean; globalName?: string }> = new Map();
   private localVars: string[] = [];
   private loopStack: number[] = [];
@@ -327,22 +387,30 @@ export class IRCompiler {
 
   constructor() {
     this.builder = new IRBuilder();
+    this.allocator = new RegisterAllocator(); // 초기화
   }
 
   /**
    * 새 레지스터 할당
+   * 버그 수정: 중복 할당 방지를 위해 RegisterAllocator 사용
    */
   private allocRegister(): number {
-    return this.nextRegister++;
+    return this.allocator.allocate();
   }
 
   /**
-   * 레지스터 반환
+   * 함수 호출 인자용 레지스터 할당
+   * 버그 수정: 함수 호출 시 전용 영역 사용
+   */
+  private allocCallArgRegister(index: number): number {
+    return this.allocator.allocateForCall(index);
+  }
+
+  /**
+   * 레지스터 반환 (해제)
    */
   private freeRegister(reg: number): void {
-    if (reg === this.nextRegister - 1) {
-      this.nextRegister--;
-    }
+    this.allocator.free(reg);
   }
 
   /**
@@ -918,10 +986,11 @@ export class IRCompiler {
     const funcReg = this.compileExpression(funcNode);
     const args = expr.args || [];
 
-    // 인자를 resultReg + 1 위치부터 배치
-    // CALL 지시에 따르면 r[dst + 1], r[dst + 2], ... 에 인자가 있어야 함
+    // 버그 수정 (2026-03-08): 함수 호출 인자를 전용 영역에 배치
+    // 이전: resultReg + 1 + i 위치에 배치 (겹칠 수 있음)
+    // 수정: allocCallArgRegister()로 전용 영역(200+) 사용
     for (let i = 0; i < args.length; i++) {
-      const argReg = resultReg + 1 + i;
+      const argReg = this.allocCallArgRegister(i); // 전용 영역 사용
       const arg = args[i];
       const actualArg = arg.value || arg;
 
@@ -952,6 +1021,7 @@ export class IRCompiler {
     }
 
     // CALL: r[resultReg] = call(r[funcReg], argCount)
+    // VM은 인자를 r[200], r[201], ... 에서 찾음
     this.builder.emit(Opcode.CALL, [resultReg, funcReg, args.length]);
     this.freeRegister(funcReg);
 
