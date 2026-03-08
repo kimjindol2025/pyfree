@@ -29,6 +29,13 @@ export class PyFreeParser {
       // EOF 전에 모든 문장 파싱
       if (this.check(TokenType.EOF)) break;
 
+      // ✅ Skip NEWLINE tokens between statements (2026-03-09)
+      while (this.match(TokenType.NEWLINE)) {
+        // Skip newlines
+      }
+
+      if (this.isAtEnd() || this.check(TokenType.EOF)) break;
+
       const stmt = this.parseStatement();
       if (stmt) {
         body.push(stmt);
