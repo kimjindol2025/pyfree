@@ -201,12 +201,17 @@ export class ModuleResolver {
       return this.modules.get(stdlibPath)!;
     }
 
-    // 표준 모듈 목록
+    // 표준 모듈 목록 (Phase 5 확장)
     const stdlibModules: { [key: string]: () => Map<string, any> } = {
       'math': () => this.createMathModule(),
       'http': () => this.createHttpModule(),
       'collections': () => this.createCollectionsModule(),
       'io': () => this.createIOModule(),
+      'json': () => this.createJsonModule(),
+      'datetime': () => this.createDatetimeModule(),
+      'random': () => this.createRandomModule(),
+      'os': () => this.createOsModule(),
+      'sys': () => this.createSysModule(),
     };
 
     if (!stdlibModules[moduleName]) {
@@ -280,6 +285,210 @@ export class ModuleResolver {
         close: () => {},
       };
     });
+
+    return exports;
+  }
+
+  /**
+   * json 모듈 (Phase 5-1)
+   */
+  private createJsonModule(): Map<string, any> {
+    const exports = new Map<string, any>();
+
+    exports.set('dumps', (obj: any, indent?: number) => {
+      try {
+        return JSON.stringify(obj, null, indent);
+      } catch (e: any) {
+        throw new Error(`직렬화 오류: ${e.message}`);
+      }
+    });
+
+    exports.set('loads', (text: string) => {
+      try {
+        return JSON.parse(text);
+      } catch (e: any) {
+        throw new Error(`파싱 오류: ${e.message}`);
+      }
+    });
+
+    return exports;
+  }
+
+  /**
+   * datetime 모듈 (Phase 5-2)
+   */
+  private createDatetimeModule(): Map<string, any> {
+    const exports = new Map<string, any>();
+
+    // DateTime 클래스 (간단한 버전)
+    class DateTime {
+      private date: Date;
+
+      constructor(year: number, month: number, day: number, hour: number = 0, minute: number = 0, second: number = 0) {
+        this.date = new Date(year, month - 1, day, hour, minute, second);
+      }
+
+      get year() {
+        return this.date.getFullYear();
+      }
+      get month() {
+        return this.date.getMonth() + 1;
+      }
+      get day() {
+        return this.date.getDate();
+      }
+      get hour() {
+        return this.date.getHours();
+      }
+      get minute() {
+        return this.date.getMinutes();
+      }
+      get second() {
+        return this.date.getSeconds();
+      }
+
+      toString() {
+        return `${this.year}-${String(this.month).padStart(2, '0')}-${String(this.day).padStart(2, '0')} ${String(this.hour).padStart(2, '0')}:${String(this.minute).padStart(2, '0')}:${String(this.second).padStart(2, '0')}`;
+      }
+
+      add(days: number) {
+        const d = new Date(this.date);
+        d.setDate(d.getDate() + days);
+        return new DateTime(d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
+      }
+    }
+
+    exports.set('DateTime', DateTime);
+    exports.set('now', () => {
+      const d = new Date();
+      return new DateTime(d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
+    });
+
+    return exports;
+  }
+
+  /**
+   * random 모듈 (Phase 5-3)
+   */
+  private createRandomModule(): Map<string, any> {
+    const exports = new Map<string, any>();
+
+    exports.set('random', () => Math.random());
+
+    exports.set('randint', (a: number, b: number) => {
+      const min = Math.ceil(a);
+      const max = Math.floor(b);
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    });
+
+    exports.set('choice', <T,>(seq: T[]) => {
+      return seq[Math.floor(Math.random() * seq.length)];
+    });
+
+    exports.set('shuffle', <T,>(seq: T[]) => {
+      const arr = [...seq];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    });
+
+    exports.set('sample', <T,>(seq: T[], k: number) => {
+      const indices = new Set<number>();
+      while (indices.size < k) {
+        indices.add(Math.floor(Math.random() * seq.length));
+      }
+      return Array.from(indices).map((i) => seq[i]);
+    });
+
+    exports.set('gauss', (mu: number = 0, sigma: number = 1) => {
+      let u1 = 0;
+      while (u1 === 0) u1 = Math.random();
+      const u2 = Math.random();
+      const mag = sigma * Math.sqrt(-2.0 * Math.log(u1));
+      const z0 = mag * Math.cos((2.0 * Math.PI * u2) / (2 * Math.PI));
+      return z0 + mu;
+    });
+
+    return exports;
+  }
+
+  /**
+   * os 모듈 (Phase 5-4)
+   */
+  private createOsModule(): Map<string, any> {
+    const exports = new Map<string, any>();
+
+    exports.set('getcwd', () => process.cwd());
+
+    exports.set('listdir', (directory: string) => {
+      try {
+        return fs.readdirSync(directory);
+      } catch (e: any) {
+        throw new Error(`디렉토리 읽기 실패: ${e.message}`);
+      }
+    });
+
+    exports.set('path_exists', (filepath: string) => fs.existsSync(filepath));
+
+    exports.set('path_isfile', (filepath: string) => {
+      try {
+        return fs.statSync(filepath).isFile();
+      } catch {
+        return false;
+      }
+    });
+
+    exports.set('path_isdir', (filepath: string) => {
+      try {
+        return fs.statSync(filepath).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+
+    exports.set('getenv', (key: string, defaultValue?: string) => {
+      return process.env[key] ?? defaultValue;
+    });
+
+    exports.set('setenv', (key: string, value: string) => {
+      process.env[key] = value;
+      return null;
+    });
+
+    exports.set('getpid', () => process.pid);
+
+    return exports;
+  }
+
+  /**
+   * sys 모듈 (Phase 5-5)
+   */
+  private createSysModule(): Map<string, any> {
+    const exports = new Map<string, any>();
+
+    exports.set('argv', process.argv.slice(2));
+    exports.set('version', '0.2.0 (PyFree)');
+    exports.set('platform', process.platform);
+    exports.set('byteorder', 'little');
+
+    exports.set('exit', (code: number = 0) => {
+      process.exit(code);
+    });
+
+    exports.set('getrecursionlimit', () => 1000);
+
+    exports.set('getmemory_info', () => {
+      const mem = process.memoryUsage();
+      return {
+        rss: mem.rss,
+        heapTotal: mem.heapTotal,
+        heapUsed: mem.heapUsed,
+      };
+    });
+
+    exports.set('getpid', () => process.pid);
 
     return exports;
   }
