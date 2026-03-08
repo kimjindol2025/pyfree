@@ -1,0 +1,248 @@
+# PyFree Compiler: Unified Compiler
+# 전체 컴파일 파이프라인
+
+from compiler.lexer import Lexer
+from compiler.parser import Parser
+from compiler.type_checker import TypeChecker
+from compiler.ir_compiler import IRCompiler
+from compiler.optimizer import Optimizer
+from types import Instruction
+
+
+class PyFreeCompiler:
+    """PyFree 언어 컴파일러"""
+
+    def __init__(self):
+        self.source = ""
+        self.tokens = None
+        self.ast = None
+        self.typed_ast = None
+        self.ir = None
+        self.optimized_ir = None
+        self.errors = []
+
+    def compile_file(self, filename: str) -> list[Instruction]:
+        """파일 컴파일"""
+        try:
+            with open(filename, "r") as f:
+                source = f.read()
+            return self.compile(source)
+        except:
+            self.errors.append("Error reading file: " + filename)
+            return []
+
+    def compile(self, source: str) -> list[Instruction]:
+        """소스 코드 컴파일"""
+        self.source = source
+        self.errors = []
+
+        # Step 1: 렉싱 (Lexing)
+        if not self._lexing():
+            return []
+
+        # Step 2: 파싱 (Parsing)
+        if not self._parsing():
+            return []
+
+        # Step 3: 타입 검사 (Type Checking)
+        if not self._type_checking():
+            return []
+
+        # Step 4: IR 컴파일 (IR Compilation)
+        if not self._ir_compilation():
+            return []
+
+        # Step 5: 최적화 (Optimization)
+        if not self._optimization():
+            return []
+
+        return self.optimized_ir
+
+    def _lexing(self) -> bool:
+        """렉싱 단계"""
+        try:
+            lexer = Lexer(self.source)
+            self.tokens = lexer.tokenize()
+            return True
+        except:
+            self.errors.append("Lexing error")
+            return False
+
+    def _parsing(self) -> bool:
+        """파싱 단계"""
+        try:
+            parser = Parser(self.tokens)
+            self.ast = parser.parse()
+            return True
+        except:
+            self.errors.append("Parsing error")
+            return False
+
+    def _type_checking(self) -> bool:
+        """타입 검사 단계"""
+        try:
+            checker = TypeChecker()
+            self.typed_ast = checker.check(self.ast)
+            if len(checker.errors) > 0:
+                for error in checker.errors:
+                    self.errors.append(error)
+                # 에러가 있어도 계속 진행 (경고)
+            return True
+        except:
+            self.errors.append("Type checking error")
+            return False
+
+    def _ir_compilation(self) -> bool:
+        """IR 컴파일 단계"""
+        try:
+            compiler = IRCompiler()
+            self.ir = compiler.compile(self.typed_ast)
+            return True
+        except:
+            self.errors.append("IR compilation error")
+            return False
+
+    def _optimization(self) -> bool:
+        """최적화 단계"""
+        try:
+            optimizer = Optimizer()
+            self.optimized_ir = optimizer.optimize(self.ir)
+            return True
+        except:
+            self.errors.append("Optimization error")
+            return False
+
+    def get_ir(self) -> list[Instruction]:
+        """최적화된 IR 반환"""
+        return self.optimized_ir if self.optimized_ir is not None else []
+
+    def get_errors(self) -> list[str]:
+        """컴파일 에러 반환"""
+        return self.errors
+
+    def has_errors(self) -> bool:
+        """컴파일 에러 여부"""
+        return len(self.errors) > 0
+
+    def print_ir(self) -> None:
+        """IR 출력"""
+        if self.optimized_ir is None:
+            print("No IR generated")
+            return
+
+        for i in range(len(self.optimized_ir)):
+            instr = self.optimized_ir[i]
+            print(f"{i}: {instr.opcode} {instr.args}")
+
+    def print_errors(self) -> None:
+        """에러 출력"""
+        if len(self.errors) == 0:
+            print("No errors")
+            return
+
+        for error in self.errors:
+            print(error)
+
+    def print_statistics(self) -> None:
+        """컴파일 통계 출력"""
+        print("=== Compilation Statistics ===")
+        print(f"Source lines: {len(self.source.split())} tokens")
+        if self.tokens is not None:
+            print(f"Tokens: {len(self.tokens)}")
+        if self.ast is not None:
+            print(f"AST nodes: {len(self.ast)}")
+        if self.ir is not None:
+            print(f"IR instructions: {len(self.ir)}")
+        if self.optimized_ir is not None:
+            print(f"Optimized IR instructions: {len(self.optimized_ir)}")
+        print(f"Errors: {len(self.errors)}")
+
+    def compile_to_bytecode(self, source: str) -> bytes:
+        """소스 코드를 바이트코드로 컴파일"""
+        ir = self.compile(source)
+        # 간단한 직렬화 (실제로는 더 복잡한 바이트코드 형식 필요)
+        return self._serialize_ir(ir)
+
+    def _serialize_ir(self, ir: list[Instruction]) -> bytes:
+        """IR을 바이트코드로 직렬화"""
+        # 이 구현은 placeholder
+        # 실제로는 각 명령어를 바이트로 인코딩해야 함
+        bytecode = ""
+        for instr in ir:
+            bytecode = bytecode + instr.opcode + "|"
+        # 바이트 변환 (placeholder)
+        return bytecode
+
+    def compile_multiple_files(self, filenames: list[str]) -> list[list[Instruction]]:
+        """여러 파일 컴파일"""
+        results = []
+        for filename in filenames:
+            ir = self.compile_file(filename)
+            results.append(ir)
+        return results
+
+    def compile_with_options(self, source: str, options: dict) -> list[Instruction]:
+        """옵션을 사용한 컴파일"""
+        # optimize: 최적화 활성화 여부
+        # verify: 검증 활성화 여부
+        original_compile = self.compile(source)
+
+        if "optimize" in options and not options["optimize"]:
+            # 최적화 비활성화
+            return self.ir if self.ir is not None else []
+
+        if "verify" in options and options["verify"]:
+            # 추가 검증 수행
+            self._verify_ir(self.optimized_ir)
+
+        return self.optimized_ir if self.optimized_ir is not None else []
+
+    def _verify_ir(self, ir: list[Instruction]) -> None:
+        """IR 검증"""
+        # 레이블 검증
+        labels = {}
+        for i in range(len(ir)):
+            if ir[i].opcode == "LABEL":
+                if len(ir[i].args) > 0:
+                    labels[ir[i].args[0]] = i
+
+        # 점프 검증
+        for i in range(len(ir)):
+            if ir[i].opcode in ["JUMP", "JUMP_IF_FALSE"]:
+                if len(ir[i].args) > 0:
+                    target = ir[i].args[0]
+                    if target not in labels:
+                        self.errors.append(f"Invalid jump target at instruction {i}")
+
+    def reset(self) -> None:
+        """컴파일러 상태 초기화"""
+        self.source = ""
+        self.tokens = None
+        self.ast = None
+        self.typed_ast = None
+        self.ir = None
+        self.optimized_ir = None
+        self.errors = []
+
+
+# 편의 함수
+def compile_file(filename: str) -> list[Instruction]:
+    """파일 컴파일 (편의 함수)"""
+    compiler = PyFreeCompiler()
+    return compiler.compile_file(filename)
+
+
+def compile_source(source: str) -> list[Instruction]:
+    """소스 코드 컴파일 (편의 함수)"""
+    compiler = PyFreeCompiler()
+    return compiler.compile(source)
+
+
+def compile_and_print(source: str) -> None:
+    """소스 코드 컴파일 및 결과 출력"""
+    compiler = PyFreeCompiler()
+    ir = compiler.compile(source)
+    compiler.print_statistics()
+    compiler.print_errors()
+    if not compiler.has_errors():
+        compiler.print_ir()

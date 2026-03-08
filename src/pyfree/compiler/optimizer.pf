@@ -1,0 +1,203 @@
+# PyFree Compiler: Optimizer
+# IR 최적화
+
+from types import Instruction
+
+
+class Optimizer:
+    """IR 최적화"""
+
+    def __init__(self):
+        self.passes = []
+        self.constant_pool = {}
+
+    def optimize(self, instructions: list[Instruction]) -> list[Instruction]:
+        """IR 최적화 실행"""
+        result = instructions
+
+        # 1단계: 상수 폴딩
+        result = self.constant_fold(result)
+
+        # 2단계: 죽은 코드 제거
+        result = self.eliminate_dead_code(result)
+
+        # 3단계: 공통 부분식 제거
+        result = self.eliminate_common_subexpressions(result)
+
+        # 4단계: 불가능한 점프 정리
+        result = self.simplify_jumps(result)
+
+        return result
+
+    def constant_fold(self, instructions: list[Instruction]) -> list[Instruction]:
+        """상수 폴딩: 컴파일 타임에 계산 가능한 연산 미리 계산"""
+        result = []
+        constants = {}
+
+        for instr in instructions:
+            if instr.opcode == "LOAD_CONST":
+                # 상수 로드는 그대로 유지
+                result.append(instr)
+            elif instr.opcode in ["ADD", "SUB", "MUL", "DIV", "MOD"]:
+                # 이항 연산 최적화
+                if len(instr.args) >= 2:
+                    left_reg = instr.args[0]
+                    right_reg = instr.args[1]
+
+                    # 두 레지스터 모두 상수이면 계산
+                    if left_reg in constants and right_reg in constants:
+                        left_val = constants[left_reg]
+                        right_val = constants[right_reg]
+
+                        if instr.opcode == "ADD":
+                            result_val = left_val + right_val
+                        elif instr.opcode == "SUB":
+                            result_val = left_val - right_val
+                        elif instr.opcode == "MUL":
+                            result_val = left_val * right_val
+                        elif instr.opcode == "DIV" and right_val != 0:
+                            result_val = left_val // right_val
+                        elif instr.opcode == "MOD" and right_val != 0:
+                            result_val = left_val % right_val
+                        else:
+                            result.append(instr)
+                            continue
+
+                        # 상수 값 저장
+                        constants[left_reg] = result_val
+                        result.append(instr)
+                    else:
+                        result.append(instr)
+                else:
+                    result.append(instr)
+            else:
+                result.append(instr)
+
+        return result
+
+    def eliminate_dead_code(self, instructions: list[Instruction]) -> list[Instruction]:
+        """죽은 코드 제거: 도달 불가능한 코드 삭제"""
+        result = []
+        i = 0
+
+        while i < len(instructions):
+            instr = instructions[i]
+            result.append(instr)
+
+            # RETURN이나 JUMP는 다음 코드까지 도달 불가능
+            if instr.opcode in ["RETURN", "JUMP"]:
+                # 다음 LABEL까지는 죽은 코드
+                i = i + 1
+                while i < len(instructions):
+                    if instructions[i].opcode == "LABEL":
+                        break
+                    i = i + 1
+                continue
+
+            i = i + 1
+
+        return result
+
+    def eliminate_common_subexpressions(self, instructions: list[Instruction]) -> list[Instruction]:
+        """공통 부분식 제거: 동일한 연산을 한 번만 수행"""
+        result = []
+        expr_cache = {}  # 표현식 → 레지스터 매핑
+
+        for instr in instructions:
+            # 할당이나 점프는 캐시를 무효화
+            if instr.opcode in ["STORE_VAR", "JUMP", "JUMP_IF_FALSE", "LABEL"]:
+                expr_cache = {}
+                result.append(instr)
+            elif instr.opcode in ["ADD", "SUB", "MUL", "DIV", "MOD"]:
+                # 표현식을 키로 사용
+                if len(instr.args) >= 2:
+                    expr_key = (instr.opcode, instr.args[0], instr.args[1])
+
+                    if expr_key in expr_cache:
+                        # 이미 계산한 표현식 - 결과 재사용
+                        # (최적화된 IR로 변환)
+                        pass
+                    else:
+                        expr_cache[expr_key] = instr.args[0]
+                        result.append(instr)
+                else:
+                    result.append(instr)
+            else:
+                result.append(instr)
+
+        return result
+
+    def simplify_jumps(self, instructions: list[Instruction]) -> list[Instruction]:
+        """불필요한 점프 정리"""
+        result = []
+
+        for i in range(len(instructions)):
+            instr = instructions[i]
+
+            if instr.opcode == "JUMP":
+                # 바로 다음 명령어가 LABEL이고 점프 대상이 같으면 제거
+                if i + 1 < len(instructions):
+                    next_instr = instructions[i + 1]
+                    if next_instr.opcode == "LABEL" and len(instr.args) > 0 and len(next_instr.args) > 0:
+                        if instr.args[0] == next_instr.args[0]:
+                            # 불필요한 점프 - 건너뜀
+                            continue
+
+            result.append(instr)
+
+        return result
+
+    def inline_small_functions(self, instructions: list[Instruction]) -> list[Instruction]:
+        """작은 함수 인라인화"""
+        # 아주 작은 함수만 인라인화
+        # 이 최적화는 더 복잡한 분석이 필요하므로 기본 구현만 제공
+        return instructions
+
+    def remove_redundant_loads(self, instructions: list[Instruction]) -> list[Instruction]:
+        """중복 로드 제거"""
+        result = []
+        last_load = {}
+
+        for instr in instructions:
+            if instr.opcode == "LOAD_VAR" and len(instr.args) > 0:
+                var_offset = instr.args[0]
+
+                if var_offset in last_load:
+                    # 동일한 변수를 다시 로드 - 최적화 가능
+                    # (현재는 안전하게 유지)
+                    pass
+
+                last_load[var_offset] = instr
+
+            result.append(instr)
+
+        return result
+
+    def optimize_register_usage(self, instructions: list[Instruction]) -> list[Instruction]:
+        """레지스터 사용 최적화"""
+        # 사용되지 않는 레지스터 할당 제거
+        # 이 최적화는 라이브니스 분석이 필요
+        return instructions
+
+    def strength_reduction(self, instructions: list[Instruction]) -> list[Instruction]:
+        """강도 감소: 비용이 큰 연산을 더 저렴한 연산으로 변환"""
+        result = []
+
+        for instr in instructions:
+            if instr.opcode == "MUL":
+                # x * 2를 x + x로 변환
+                if len(instr.args) >= 2:
+                    # 상수 인식이 필요하므로 스킵
+                    result.append(instr)
+                else:
+                    result.append(instr)
+            else:
+                result.append(instr)
+
+        return result
+
+
+def optimize_ir(instructions: list[Instruction]) -> list[Instruction]:
+    """IR 최적화 메인 함수"""
+    optimizer = Optimizer()
+    return optimizer.optimize(instructions)
