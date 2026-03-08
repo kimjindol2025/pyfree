@@ -1,0 +1,302 @@
+# PyFree Compiler Stdlib: Strings
+# 문자열 처리 고도화 모듈
+
+# ============================================
+# Character Classification
+# ============================================
+
+def isalpha(c: str) -> bool:
+    """문자인지 확인"""
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z')
+
+
+def isdigit(c: str) -> bool:
+    """숫자인지 확인"""
+    return c >= '0' and c <= '9'
+
+
+def isalnum(c: str) -> bool:
+    """알파벳 또는 숫자인지 확인"""
+    return isalpha(c) or isdigit(c)
+
+
+def isspace(c: str) -> bool:
+    """공백인지 확인"""
+    return c == ' ' or c == '\t' or c == '\n' or c == '\r'
+
+
+def isupper(c: str) -> bool:
+    """대문자인지 확인"""
+    return c >= 'A' and c <= 'Z'
+
+
+def islower(c: str) -> bool:
+    """소문자인지 확인"""
+    return c >= 'a' and c <= 'z'
+
+
+def ispunct(c: str) -> bool:
+    """문장부호인지 확인"""
+    punctuation = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+    for p in punctuation:
+        if c == p:
+            return True
+    return False
+
+
+# ============================================
+# Case Conversion
+# ============================================
+
+def to_upper(s: str) -> str:
+    """대문자로 변환"""
+    result = ""
+    for c in s:
+        if islower(c):
+            result = result + chr(ord(c) - 32)
+        else:
+            result = result + c
+    return result
+
+
+def to_lower(s: str) -> str:
+    """소문자로 변환"""
+    result = ""
+    for c in s:
+        if isupper(c):
+            result = result + chr(ord(c) + 32)
+        else:
+            result = result + c
+    return result
+
+
+def capitalize(s: str) -> str:
+    """첫 글자만 대문자로"""
+    if len(s) == 0:
+        return s
+    return to_upper(s[0]) + to_lower(s[1:])
+
+
+# ============================================
+# String Manipulation
+# ============================================
+
+def trim_left(s: str) -> str:
+    """좌측 공백 제거"""
+    i = 0
+    while i < len(s) and isspace(s[i]):
+        i = i + 1
+    return s[i:]
+
+
+def trim_right(s: str) -> str:
+    """우측 공백 제거"""
+    i = len(s) - 1
+    while i >= 0 and isspace(s[i]):
+        i = i - 1
+    return s[:i + 1]
+
+
+def trim(s: str) -> str:
+    """양쪽 공백 제거"""
+    return trim_left(trim_right(s))
+
+
+def reverse(s: str) -> str:
+    """문자열 역순"""
+    result = ""
+    for i in range(len(s) - 1, -1, -1):
+        result = result + s[i]
+    return result
+
+
+def repeat(s: str, n: int) -> str:
+    """문자열 반복"""
+    result = ""
+    for i in range(n):
+        result = result + s
+    return result
+
+
+# ============================================
+# String Search
+# ============================================
+
+def find(s: str, substring: str) -> int:
+    """부분 문자열 위치 찾기 (-1 if not found)"""
+    if len(substring) == 0:
+        return 0
+
+    for i in range(len(s) - len(substring) + 1):
+        match = True
+        for j in range(len(substring)):
+            if s[i + j] != substring[j]:
+                match = False
+                break
+        if match:
+            return i
+    return -1
+
+
+def rfind(s: str, substring: str) -> int:
+    """부분 문자열 마지막 위치 찾기"""
+    if len(substring) == 0:
+        return len(s)
+
+    for i in range(len(s) - len(substring), -1, -1):
+        match = True
+        for j in range(len(substring)):
+            if s[i + j] != substring[j]:
+                match = False
+                break
+        if match:
+            return i
+    return -1
+
+
+def contains(s: str, substring: str) -> bool:
+    """부분 문자열 포함 여부"""
+    return find(s, substring) != -1
+
+
+def starts_with(s: str, prefix: str) -> bool:
+    """접두사 확인"""
+    if len(prefix) > len(s):
+        return False
+    for i in range(len(prefix)):
+        if s[i] != prefix[i]:
+            return False
+    return True
+
+
+def ends_with(s: str, suffix: str) -> bool:
+    """접미사 확인"""
+    if len(suffix) > len(s):
+        return False
+    for i in range(len(suffix)):
+        if s[len(s) - len(suffix) + i] != suffix[i]:
+            return False
+    return True
+
+
+# ============================================
+# String Splitting & Joining
+# ============================================
+
+def split(s: str, separator: str = " ") -> list[str]:
+    """문자열 분할"""
+    if len(separator) == 0:
+        return []
+
+    result = []
+    current = ""
+    i = 0
+    while i < len(s):
+        if i + len(separator) <= len(s):
+            match = True
+            for j in range(len(separator)):
+                if s[i + j] != separator[j]:
+                    match = False
+                    break
+            if match:
+                result.append(current)
+                current = ""
+                i = i + len(separator)
+                continue
+        current = current + s[i]
+        i = i + 1
+
+    result.append(current)
+    return result
+
+
+def join(strings: list[str], separator: str = "") -> str:
+    """문자열 결합"""
+    if len(strings) == 0:
+        return ""
+
+    result = strings[0]
+    for i in range(1, len(strings)):
+        result = result + separator + strings[i]
+    return result
+
+
+# ============================================
+# String Replace
+# ============================================
+
+def replace(s: str, old: str, new: str, count: int = -1) -> str:
+    """부분 문자열 치환"""
+    if len(old) == 0:
+        return s
+
+    result = ""
+    replaced = 0
+    i = 0
+    while i < len(s):
+        if count != -1 and replaced >= count:
+            result = result + s[i:]
+            break
+
+        if i + len(old) <= len(s):
+            match = True
+            for j in range(len(old)):
+                if s[i + j] != old[j]:
+                    match = False
+                    break
+
+            if match:
+                result = result + new
+                i = i + len(old)
+                replaced = replaced + 1
+                continue
+
+        result = result + s[i]
+        i = i + 1
+
+    return result
+
+
+# ============================================
+# String Formatting
+# ============================================
+
+def format(template: str, args: list[any]) -> str:
+    """간단한 문자열 포맷팅 ({0}, {1} 방식)"""
+    result = ""
+    i = 0
+    arg_index = 0
+
+    while i < len(template):
+        if template[i] == '{' and i + 1 < len(template) and isdigit(template[i + 1]):
+            j = i + 1
+            while j < len(template) and isdigit(template[j]):
+                j = j + 1
+
+            if j < len(template) and template[j] == '}':
+                idx = int(template[i + 1:j])
+                if idx < len(args):
+                    result = result + str(args[idx])
+                i = j + 1
+                continue
+
+        result = result + template[i]
+        i = i + 1
+
+    return result
+
+
+def pad_left(s: str, width: int, char: str = " ") -> str:
+    """좌측 패딩"""
+    padding_count = width - len(s)
+    if padding_count <= 0:
+        return s
+    return repeat(char, padding_count) + s
+
+
+def pad_right(s: str, width: int, char: str = " ") -> str:
+    """우측 패딩"""
+    padding_count = width - len(s)
+    if padding_count <= 0:
+        return s
+    return s + repeat(char, padding_count)

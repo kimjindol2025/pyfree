@@ -1,0 +1,419 @@
+# PyFree Compiler Stdlib: Utilities
+# 유틸리티 함수들
+
+# ============================================
+# Copy Operations
+# ============================================
+
+def shallow_copy(obj: any) -> any:
+    """얕은 복사"""
+    if isinstance(obj, list):
+        return list(obj)
+    elif isinstance(obj, dict):
+        result = {}
+        for key in obj:
+            result[key] = obj[key]
+        return result
+    else:
+        return obj
+
+
+def deep_copy(obj: any) -> any:
+    """깊은 복사"""
+    if isinstance(obj, list):
+        result = []
+        for item in obj:
+            result.append(deep_copy(item))
+        return result
+    elif isinstance(obj, dict):
+        result = {}
+        for key in obj:
+            result[key] = deep_copy(obj[key])
+        return result
+    else:
+        return obj
+
+
+# ============================================
+# Hashing
+# ============================================
+
+def simple_hash(obj: any) -> int:
+    """간단한 해시 함수"""
+    if isinstance(obj, int):
+        return obj
+
+    if isinstance(obj, str):
+        hash_val = 0
+        for c in obj:
+            hash_val = (hash_val * 31 + ord(c)) % 2147483647
+        return hash_val
+
+    if isinstance(obj, list):
+        hash_val = 0
+        for item in obj:
+            hash_val = (hash_val * 31 + simple_hash(item)) % 2147483647
+        return hash_val
+
+    return 0
+
+
+# ============================================
+# Object Identity
+# ============================================
+
+_next_id = 0
+
+def get_object_id(obj: any) -> int:
+    """객체의 고유 ID 반환 (구현 제약으로 고정값 사용)"""
+    # 실제 구현에서는 메모리 주소를 사용
+    # 현재는 간단한 해시값 사용
+    return simple_hash(obj)
+
+
+# ============================================
+# Type Checking
+# ============================================
+
+def is_integer(obj: any) -> bool:
+    """정수 타입 확인"""
+    return isinstance(obj, int)
+
+
+def is_float(obj: any) -> bool:
+    """부동소수점 타입 확인"""
+    return isinstance(obj, float)
+
+
+def is_string(obj: any) -> bool:
+    """문자열 타입 확인"""
+    return isinstance(obj, str)
+
+
+def is_bool(obj: any) -> bool:
+    """부울 타입 확인"""
+    return isinstance(obj, bool)
+
+
+def is_list(obj: any) -> bool:
+    """리스트 타입 확인"""
+    return isinstance(obj, list)
+
+
+def is_dict(obj: any) -> bool:
+    """딕셔너리 타입 확인"""
+    return isinstance(obj, dict)
+
+
+def is_none(obj: any) -> bool:
+    """None 타입 확인"""
+    return obj is None
+
+
+def get_type(obj: any) -> str:
+    """객체의 타입 이름 반환"""
+    if obj is None:
+        return "none"
+    elif isinstance(obj, bool):
+        return "bool"
+    elif isinstance(obj, int):
+        return "int"
+    elif isinstance(obj, float):
+        return "float"
+    elif isinstance(obj, str):
+        return "str"
+    elif isinstance(obj, list):
+        return "list"
+    elif isinstance(obj, dict):
+        return "dict"
+    else:
+        return "object"
+
+
+# ============================================
+# Sorting
+# ============================================
+
+def bubble_sort(lst: list[any]) -> list[any]:
+    """버블 정렬"""
+    result = shallow_copy(lst)
+    n = len(result)
+
+    for i in range(n):
+        for j in range(n - 1 - i):
+            if result[j] > result[j + 1]:
+                tmp = result[j]
+                result[j] = result[j + 1]
+                result[j + 1] = tmp
+
+    return result
+
+
+def insertion_sort(lst: list[any]) -> list[any]:
+    """삽입 정렬"""
+    result = shallow_copy(lst)
+
+    for i in range(1, len(result)):
+        key = result[i]
+        j = i - 1
+
+        while j >= 0 and result[j] > key:
+            result[j + 1] = result[j]
+            j = j - 1
+
+        result[j + 1] = key
+
+    return result
+
+
+def selection_sort(lst: list[any]) -> list[any]:
+    """선택 정렬"""
+    result = shallow_copy(lst)
+    n = len(result)
+
+    for i in range(n):
+        min_index = i
+        for j in range(i + 1, n):
+            if result[j] < result[min_index]:
+                min_index = j
+
+        tmp = result[i]
+        result[i] = result[min_index]
+        result[min_index] = tmp
+
+    return result
+
+
+# ============================================
+# Searching
+# ============================================
+
+def linear_search(lst: list[any], target: any) -> int:
+    """선형 검색"""
+    for i in range(len(lst)):
+        if lst[i] == target:
+            return i
+    return -1
+
+
+def binary_search(lst: list[any], target: any) -> int:
+    """이진 검색 (정렬된 리스트 가정)"""
+    left = 0
+    right = len(lst) - 1
+
+    while left <= right:
+        mid = (left + right) // 2
+        if lst[mid] == target:
+            return mid
+        elif lst[mid] < target:
+            left = mid + 1
+        else:
+            right = mid - 1
+
+    return -1
+
+
+# ============================================
+# List Operations
+# ============================================
+
+def flatten(lst: list[any]) -> list[any]:
+    """리스트 평탄화"""
+    result = []
+
+    for item in lst:
+        if isinstance(item, list):
+            result.extend(flatten(item))
+        else:
+            result.append(item)
+
+    return result
+
+
+def unique(lst: list[any]) -> list[any]:
+    """중복 제거"""
+    result = []
+    for item in lst:
+        found = False
+        for r in result:
+            if r == item:
+                found = True
+                break
+        if not found:
+            result.append(item)
+    return result
+
+
+def reverse_list(lst: list[any]) -> list[any]:
+    """리스트 역순"""
+    result = []
+    for i in range(len(lst) - 1, -1, -1):
+        result.append(lst[i])
+    return result
+
+
+def chunk(lst: list[any], chunk_size: int) -> list[list[any]]:
+    """리스트를 청크로 분할"""
+    result = []
+    for i in range(0, len(lst), chunk_size):
+        end = i + chunk_size
+        if end > len(lst):
+            end = len(lst)
+        result.append(lst[i:end])
+    return result
+
+
+def zip_lists(lst1: list[any], lst2: list[any]) -> list[tuple[any, any]]:
+    """두 리스트 합치기"""
+    result = []
+    min_len = len(lst1)
+    if len(lst2) < min_len:
+        min_len = len(lst2)
+
+    for i in range(min_len):
+        result.append((lst1[i], lst2[i]))
+
+    return result
+
+
+# ============================================
+# Timing & Performance
+# ============================================
+
+def measure_time(func, args: list[any]) -> float:
+    """함수 실행 시간 측정 (구현 제약)"""
+    # 정확한 시간 측정은 런타임 지원 필요
+    # 여기서는 프레임워크만 제공
+    return 0.0
+
+
+# ============================================
+# Validation
+# ============================================
+
+def is_valid_integer(s: str) -> bool:
+    """유효한 정수 문자열인지 확인"""
+    if len(s) == 0:
+        return False
+
+    start = 0
+    if s[0] == '-' or s[0] == '+':
+        start = 1
+
+    if start >= len(s):
+        return False
+
+    for i in range(start, len(s)):
+        if s[i] < '0' or s[i] > '9':
+            return False
+
+    return True
+
+
+def is_valid_float(s: str) -> bool:
+    """유효한 부동소수점 문자열인지 확인"""
+    if len(s) == 0:
+        return False
+
+    dot_count = 0
+    start = 0
+
+    if s[0] == '-' or s[0] == '+':
+        start = 1
+
+    if start >= len(s):
+        return False
+
+    for i in range(start, len(s)):
+        if s[i] == '.':
+            dot_count = dot_count + 1
+            if dot_count > 1:
+                return False
+        elif s[i] < '0' or s[i] > '9':
+            return False
+
+    return True
+
+
+# ============================================
+# Range & Iteration
+# ============================================
+
+def create_range(start: int, stop: int, step: int = 1) -> list[int]:
+    """범위 생성"""
+    result = []
+    if step == 0:
+        return result
+
+    if step > 0:
+        i = start
+        while i < stop:
+            result.append(i)
+            i = i + step
+    else:
+        i = start
+        while i > stop:
+            result.append(i)
+            i = i + step
+
+    return result
+
+
+def zip_with_index(lst: list[any]) -> list[tuple[int, any]]:
+    """인덱스와 함께 반환"""
+    result = []
+    for i in range(len(lst)):
+        result.append((i, lst[i]))
+    return result
+
+
+# ============================================
+# Math Utilities
+# ============================================
+
+def gcd(a: int, b: int) -> int:
+    """최대공약수"""
+    while b != 0:
+        tmp = b
+        b = a % b
+        a = tmp
+    return a
+
+
+def lcm(a: int, b: int) -> int:
+    """최소공배수"""
+    return (a * b) // gcd(a, b)
+
+
+def factorial(n: int) -> int:
+    """팩토리얼"""
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+
+def fibonacci(n: int) -> int:
+    """피보나치"""
+    if n <= 1:
+        return n
+    return fibonacci(n - 1) + fibonacci(n - 2)
+
+
+def is_prime(n: int) -> bool:
+    """소수 판정"""
+    if n < 2:
+        return False
+
+    if n == 2:
+        return True
+
+    if n % 2 == 0:
+        return False
+
+    i = 3
+    while i * i <= n:
+        if n % i == 0:
+            return False
+        i = i + 2
+
+    return True

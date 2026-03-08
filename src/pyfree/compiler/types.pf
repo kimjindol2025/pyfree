@@ -1,0 +1,519 @@
+# PyFree Compiler Type Definitions
+# 컴파일러의 기초가 되는 모든 타입 정의
+
+# ============================================
+# Token Types
+# ============================================
+
+class Token:
+    """렉서에서 생성되는 토큰"""
+    type: str
+    value: any
+    line: int
+    column: int
+
+    def __init__(self, token_type: str, value: any, line: int, column: int):
+        self.type = token_type
+        self.value = value
+        self.line = line
+        self.column = column
+
+    def __repr__(self) -> str:
+        return f"Token({self.type}, {self.value}, {self.line}:{self.column})"
+
+
+# ============================================
+# AST Node Types
+# ============================================
+
+class ASTNode:
+    """모든 AST 노드의 기본 클래스"""
+    node_type: str
+    line: int
+    column: int
+
+    def __init__(self, node_type: str, line: int = 0, column: int = 0):
+        self.node_type = node_type
+        self.line = line
+        self.column = column
+
+
+class Expression(ASTNode):
+    """표현식 노드"""
+    pass
+
+
+class Statement(ASTNode):
+    """문장 노드"""
+    pass
+
+
+# Literal Expressions
+class IntLiteral(Expression):
+    value: int
+
+    def __init__(self, value: int, line: int = 0, column: int = 0):
+        super().__init__("IntLiteral", line, column)
+        self.value = value
+
+
+class FloatLiteral(Expression):
+    value: float
+
+    def __init__(self, value: float, line: int = 0, column: int = 0):
+        super().__init__("FloatLiteral", line, column)
+        self.value = value
+
+
+class StringLiteral(Expression):
+    value: str
+
+    def __init__(self, value: str, line: int = 0, column: int = 0):
+        super().__init__("StringLiteral", line, column)
+        self.value = value
+
+
+class BoolLiteral(Expression):
+    value: bool
+
+    def __init__(self, value: bool, line: int = 0, column: int = 0):
+        super().__init__("BoolLiteral", line, column)
+        self.value = value
+
+
+class ListLiteral(Expression):
+    elements: list[Expression]
+
+    def __init__(self, elements: list[Expression], line: int = 0, column: int = 0):
+        super().__init__("ListLiteral", line, column)
+        self.elements = elements
+
+
+class DictLiteral(Expression):
+    keys: list[Expression]
+    values: list[Expression]
+
+    def __init__(self, keys: list[Expression], values: list[Expression], line: int = 0, column: int = 0):
+        super().__init__("DictLiteral", line, column)
+        self.keys = keys
+        self.values = values
+
+
+# Variable & Identifiers
+class Identifier(Expression):
+    name: str
+
+    def __init__(self, name: str, line: int = 0, column: int = 0):
+        super().__init__("Identifier", line, column)
+        self.name = name
+
+
+# Binary & Unary Operations
+class BinaryOp(Expression):
+    left: Expression
+    op: str
+    right: Expression
+
+    def __init__(self, left: Expression, op: str, right: Expression, line: int = 0, column: int = 0):
+        super().__init__("BinaryOp", line, column)
+        self.left = left
+        self.op = op
+        self.right = right
+
+
+class UnaryOp(Expression):
+    op: str
+    operand: Expression
+
+    def __init__(self, op: str, operand: Expression, line: int = 0, column: int = 0):
+        super().__init__("UnaryOp", line, column)
+        self.op = op
+        self.operand = operand
+
+
+# Function & Method Calls
+class CallExpression(Expression):
+    func: Expression
+    args: list[Expression]
+
+    def __init__(self, func: Expression, args: list[Expression], line: int = 0, column: int = 0):
+        super().__init__("CallExpression", line, column)
+        self.func = func
+        self.args = args
+
+
+class IndexExpression(Expression):
+    obj: Expression
+    index: Expression
+
+    def __init__(self, obj: Expression, index: Expression, line: int = 0, column: int = 0):
+        super().__init__("IndexExpression", line, column)
+        self.obj = obj
+        self.index = index
+
+
+class AttributeExpression(Expression):
+    obj: Expression
+    attr: str
+
+    def __init__(self, obj: Expression, attr: str, line: int = 0, column: int = 0):
+        super().__init__("AttributeExpression", line, column)
+        self.obj = obj
+        self.attr = attr
+
+
+# Statements
+class AssignmentStatement(Statement):
+    target: str
+    value: Expression
+
+    def __init__(self, target: str, value: Expression, line: int = 0, column: int = 0):
+        super().__init__("AssignmentStatement", line, column)
+        self.target = target
+        self.value = value
+
+
+class FunctionDef(Statement):
+    name: str
+    params: list[str]
+    body: list[Statement]
+    return_type: str
+
+    def __init__(self, name: str, params: list[str], body: list[Statement], return_type: str = "any", line: int = 0, column: int = 0):
+        super().__init__("FunctionDef", line, column)
+        self.name = name
+        self.params = params
+        self.body = body
+        self.return_type = return_type
+
+
+class ClassDef(Statement):
+    name: str
+    base_class: str
+    methods: list[FunctionDef]
+    body: list[Statement]
+
+    def __init__(self, name: str, base_class: str, methods: list[FunctionDef], body: list[Statement], line: int = 0, column: int = 0):
+        super().__init__("ClassDef", line, column)
+        self.name = name
+        self.base_class = base_class
+        self.methods = methods
+        self.body = body
+
+
+class IfStatement(Statement):
+    condition: Expression
+    then_body: list[Statement]
+    else_body: list[Statement]
+
+    def __init__(self, condition: Expression, then_body: list[Statement], else_body: list[Statement], line: int = 0, column: int = 0):
+        super().__init__("IfStatement", line, column)
+        self.condition = condition
+        self.then_body = then_body
+        self.else_body = else_body
+
+
+class ForStatement(Statement):
+    target: str
+    iter: Expression
+    body: list[Statement]
+
+    def __init__(self, target: str, iter: Expression, body: list[Statement], line: int = 0, column: int = 0):
+        super().__init__("ForStatement", line, column)
+        self.target = target
+        self.iter = iter
+        self.body = body
+
+
+class WhileStatement(Statement):
+    condition: Expression
+    body: list[Statement]
+
+    def __init__(self, condition: Expression, body: list[Statement], line: int = 0, column: int = 0):
+        super().__init__("WhileStatement", line, column)
+        self.condition = condition
+        self.body = body
+
+
+class ReturnStatement(Statement):
+    value: Expression
+
+    def __init__(self, value: Expression, line: int = 0, column: int = 0):
+        super().__init__("ReturnStatement", line, column)
+        self.value = value
+
+
+class BreakStatement(Statement):
+    def __init__(self, line: int = 0, column: int = 0):
+        super().__init__("BreakStatement", line, column)
+
+
+class ContinueStatement(Statement):
+    def __init__(self, line: int = 0, column: int = 0):
+        super().__init__("ContinueStatement", line, column)
+
+
+class ExpressionStatement(Statement):
+    expr: Expression
+
+    def __init__(self, expr: Expression, line: int = 0, column: int = 0):
+        super().__init__("ExpressionStatement", line, column)
+        self.expr = expr
+
+
+# ============================================
+# Type System
+# ============================================
+
+class Type:
+    """타입의 기본 클래스"""
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __repr__(self) -> str:
+        return self.name
+
+
+class PrimitiveType(Type):
+    """int, float, str, bool 등 기본 타입"""
+    pass
+
+
+class FunctionType(Type):
+    """함수 타입"""
+    param_types: list[Type]
+    return_type: Type
+
+    def __init__(self, param_types: list[Type], return_type: Type):
+        param_str = ", ".join([str(t) for t in param_types])
+        return_str = str(return_type)
+        super().__init__(f"({param_str}) -> {return_str}")
+        self.param_types = param_types
+        self.return_type = return_type
+
+
+class GenericType(Type):
+    """list[int], dict[str, int] 등 제너릭 타입"""
+    base_type: str
+    type_args: list[Type]
+
+    def __init__(self, base_type: str, type_args: list[Type]):
+        args_str = ", ".join([str(t) for t in type_args])
+        super().__init__(f"{base_type}[{args_str}]")
+        self.base_type = base_type
+        self.type_args = type_args
+
+
+class UnionType(Type):
+    """타입 유니온 (A | B)"""
+    types: list[Type]
+
+    def __init__(self, types: list[Type]):
+        type_str = " | ".join([str(t) for t in types])
+        super().__init__(type_str)
+        self.types = types
+
+
+class OptionType(Type):
+    """Optional[T]"""
+    inner_type: Type
+
+    def __init__(self, inner_type: Type):
+        super().__init__(f"Option[{inner_type}]")
+        self.inner_type = inner_type
+
+
+class ResultType(Type):
+    """Result[T, E]"""
+    ok_type: Type
+    err_type: Type
+
+    def __init__(self, ok_type: Type, err_type: Type):
+        super().__init__(f"Result[{ok_type}, {err_type}]")
+        self.ok_type = ok_type
+        self.err_type = err_type
+
+
+# Built-in types
+def get_builtin_types() -> dict[str, Type]:
+    """모든 내장 타입 반환"""
+    return {
+        "int": PrimitiveType("int"),
+        "float": PrimitiveType("float"),
+        "str": PrimitiveType("str"),
+        "bool": PrimitiveType("bool"),
+        "any": PrimitiveType("any"),
+        "none": PrimitiveType("none"),
+        "list": PrimitiveType("list"),
+        "dict": PrimitiveType("dict"),
+        "set": PrimitiveType("set"),
+        "tuple": PrimitiveType("tuple"),
+    }
+
+
+# ============================================
+# IR (Intermediate Representation)
+# ============================================
+
+class Instruction:
+    """IR 명령어"""
+    opcode: str
+    args: list[int]
+
+    def __init__(self, opcode: str, args: list[int]):
+        self.opcode = opcode
+        self.args = args
+
+    def __repr__(self) -> str:
+        args_str = " ".join([str(a) for a in self.args])
+        if args_str:
+            return f"{self.opcode} {args_str}"
+        else:
+            return self.opcode
+
+
+# IR Opcodes (47개)
+OPCODES = {
+    # 상수 & 변수
+    "LOAD_CONST": 0,
+    "LOAD_VAR": 1,
+    "STORE_VAR": 2,
+    "LOAD_GLOBAL": 3,
+    "STORE_GLOBAL": 4,
+
+    # 연산
+    "BINARY_ADD": 10,
+    "BINARY_SUB": 11,
+    "BINARY_MUL": 12,
+    "BINARY_DIV": 13,
+    "BINARY_MOD": 14,
+    "BINARY_POW": 15,
+    "BINARY_EQ": 16,
+    "BINARY_NE": 17,
+    "BINARY_LT": 18,
+    "BINARY_LE": 19,
+    "BINARY_GT": 20,
+    "BINARY_GE": 21,
+    "BINARY_AND": 22,
+    "BINARY_OR": 23,
+    "UNARY_NEG": 24,
+    "UNARY_NOT": 25,
+
+    # 컬렉션
+    "BUILD_LIST": 30,
+    "BUILD_DICT": 31,
+    "BUILD_SET": 32,
+    "BUILD_TUPLE": 33,
+    "INDEX_GET": 34,
+    "INDEX_SET": 35,
+
+    # 제어흐름
+    "JUMP": 40,
+    "JUMP_IF_FALSE": 41,
+    "JUMP_IF_TRUE": 42,
+
+    # 함수
+    "CALL": 50,
+    "RETURN": 51,
+    "MAKE_FUNCTION": 52,
+
+    # 클래스
+    "MAKE_CLASS": 60,
+    "GET_ATTR": 61,
+    "SET_ATTR": 62,
+
+    # 스택
+    "POP": 70,
+    "DUP": 71,
+
+    # 기타
+    "NOP": 80,
+    "PRINT": 81,
+}
+
+
+# ============================================
+# Symbol Table
+# ============================================
+
+class Symbol:
+    """심볼 테이블 항목"""
+    name: str
+    type: Type
+    is_function: bool
+    is_class: bool
+    is_imported: bool
+
+    def __init__(self, name: str, type: Type, is_function: bool = False, is_class: bool = False, is_imported: bool = False):
+        self.name = name
+        self.type = type
+        self.is_function = is_function
+        self.is_class = is_class
+        self.is_imported = is_imported
+
+
+class SymbolTable:
+    """심볼 테이블"""
+    symbols: dict[str, Symbol]
+    parent: SymbolTable
+
+    def __init__(self, parent: SymbolTable = None):
+        self.symbols = {}
+        self.parent = parent
+
+    def define(self, name: str, symbol: Symbol) -> None:
+        """심볼 정의"""
+        self.symbols[name] = symbol
+
+    def lookup(self, name: str) -> Symbol:
+        """심볼 조회"""
+        if name in self.symbols:
+            return self.symbols[name]
+        if self.parent:
+            return self.parent.lookup(name)
+        return None
+
+    def exists(self, name: str) -> bool:
+        """심볼 존재 확인"""
+        return self.lookup(name) is not None
+
+
+# ============================================
+# Error Types
+# ============================================
+
+class CompilerError:
+    """컴파일러 에러"""
+    message: str
+    line: int
+    column: int
+    error_type: str
+
+    def __init__(self, message: str, line: int = 0, column: int = 0, error_type: str = "SyntaxError"):
+        self.message = message
+        self.line = line
+        self.column = column
+        self.error_type = error_type
+
+    def __repr__(self) -> str:
+        return f"{self.error_type} at {self.line}:{self.column}: {self.message}"
+
+
+class TypeError(CompilerError):
+    """타입 에러"""
+    def __init__(self, message: str, line: int = 0, column: int = 0):
+        super().__init__(message, line, column, "TypeError")
+
+
+class NameError(CompilerError):
+    """이름 에러"""
+    def __init__(self, message: str, line: int = 0, column: int = 0):
+        super().__init__(message, line, column, "NameError")
+
+
+class ValueError(CompilerError):
+    """값 에러"""
+    def __init__(self, message: str, line: int = 0, column: int = 0):
+        super().__init__(message, line, column, "ValueError")

@@ -1,0 +1,403 @@
+# PyFree Compiler Stdlib: Collections
+# 컬렉션 타입 확장 (Tuple, Set, Deque, Heap 등)
+
+# ============================================
+# Tuple
+# ============================================
+
+class Tuple:
+    """불변 시퀀스"""
+    elements: list[any]
+
+    def __init__(self, elements: list[any]):
+        self.elements = elements
+
+    def __len__(self) -> int:
+        return len(self.elements)
+
+    def __getitem__(self, index: int) -> any:
+        return self.elements[index]
+
+    def __iter__(self) -> any:
+        return iter(self.elements)
+
+    def __repr__(self) -> str:
+        return "(" + str(self.elements) + ")"
+
+
+def tuple_from_list(lst: list[any]) -> Tuple:
+    """리스트에서 튜플 생성"""
+    return Tuple(lst)
+
+
+# ============================================
+# Set
+# ============================================
+
+class Set:
+    """집합"""
+    elements: list[any]
+
+    def __init__(self, elements: list[any] = None):
+        if elements is None:
+            self.elements = []
+        else:
+            self.elements = []
+            for e in elements:
+                if not self.contains(e):
+                    self.elements.append(e)
+
+    def add(self, element: any) -> None:
+        """원소 추가"""
+        if not self.contains(element):
+            self.elements.append(element)
+
+    def remove(self, element: any) -> None:
+        """원소 제거"""
+        for i in range(len(self.elements)):
+            if self.elements[i] == element:
+                self.elements.pop(i)
+                return
+
+    def contains(self, element: any) -> bool:
+        """원소 포함 확인"""
+        for e in self.elements:
+            if e == element:
+                return True
+        return False
+
+    def __len__(self) -> int:
+        return len(self.elements)
+
+    def __iter__(self) -> any:
+        return iter(self.elements)
+
+    def union(self, other: Set) -> Set:
+        """합집합"""
+        result = Set(self.elements)
+        for e in other.elements:
+            result.add(e)
+        return result
+
+    def intersection(self, other: Set) -> Set:
+        """교집합"""
+        result = Set()
+        for e in self.elements:
+            if other.contains(e):
+                result.add(e)
+        return result
+
+    def difference(self, other: Set) -> Set:
+        """차집합"""
+        result = Set()
+        for e in self.elements:
+            if not other.contains(e):
+                result.add(e)
+        return result
+
+
+# ============================================
+# Deque (Double-ended Queue)
+# ============================================
+
+class Deque:
+    """양쪽 끝에서 삽입/제거 가능한 큐"""
+    elements: list[any]
+
+    def __init__(self, maxlen: int = None):
+        self.elements = []
+        self.maxlen = maxlen
+
+    def append(self, element: any) -> None:
+        """우측에 추가"""
+        if self.maxlen is not None and len(self.elements) >= self.maxlen:
+            self.elements.pop(0)
+        self.elements.append(element)
+
+    def appendleft(self, element: any) -> None:
+        """좌측에 추가"""
+        if self.maxlen is not None and len(self.elements) >= self.maxlen:
+            self.elements.pop()
+        self.elements.insert(0, element)
+
+    def pop(self) -> any:
+        """우측에서 제거 및 반환"""
+        return self.elements.pop()
+
+    def popleft(self) -> any:
+        """좌측에서 제거 및 반환"""
+        return self.elements.pop(0)
+
+    def __len__(self) -> int:
+        return len(self.elements)
+
+    def __iter__(self) -> any:
+        return iter(self.elements)
+
+
+# ============================================
+# Stack
+# ============================================
+
+class Stack:
+    """스택"""
+    elements: list[any]
+
+    def __init__(self):
+        self.elements = []
+
+    def push(self, element: any) -> None:
+        """스택에 추가"""
+        self.elements.append(element)
+
+    def pop(self) -> any:
+        """스택에서 제거 및 반환"""
+        if len(self.elements) > 0:
+            return self.elements.pop()
+        return None
+
+    def peek(self) -> any:
+        """최상위 원소 조회"""
+        if len(self.elements) > 0:
+            return self.elements[-1]
+        return None
+
+    def is_empty(self) -> bool:
+        """빈 스택인지 확인"""
+        return len(self.elements) == 0
+
+    def __len__(self) -> int:
+        return len(self.elements)
+
+
+# ============================================
+# Queue
+# ============================================
+
+class Queue:
+    """큐"""
+    elements: list[any]
+
+    def __init__(self):
+        self.elements = []
+
+    def enqueue(self, element: any) -> None:
+        """큐에 추가"""
+        self.elements.append(element)
+
+    def dequeue(self) -> any:
+        """큐에서 제거 및 반환"""
+        if len(self.elements) > 0:
+            return self.elements.pop(0)
+        return None
+
+    def peek(self) -> any:
+        """첫 번째 원소 조회"""
+        if len(self.elements) > 0:
+            return self.elements[0]
+        return None
+
+    def is_empty(self) -> bool:
+        """빈 큐인지 확인"""
+        return len(self.elements) == 0
+
+    def __len__(self) -> int:
+        return len(self.elements)
+
+
+# ============================================
+# MinHeap
+# ============================================
+
+class MinHeap:
+    """최소 힙"""
+    elements: list[any]
+
+    def __init__(self):
+        self.elements = []
+
+    def parent(self, i: int) -> int:
+        return (i - 1) // 2
+
+    def left_child(self, i: int) -> int:
+        return 2 * i + 1
+
+    def right_child(self, i: int) -> int:
+        return 2 * i + 2
+
+    def swap(self, i: int, j: int) -> None:
+        """원소 교환"""
+        tmp = self.elements[i]
+        self.elements[i] = self.elements[j]
+        self.elements[j] = tmp
+
+    def push(self, element: any) -> None:
+        """원소 추가"""
+        self.elements.append(element)
+        self.heapify_up(len(self.elements) - 1)
+
+    def heapify_up(self, i: int) -> None:
+        """상향식 힙화"""
+        while i > 0 and self.elements[self.parent(i)] > self.elements[i]:
+            self.swap(i, self.parent(i))
+            i = self.parent(i)
+
+    def pop(self) -> any:
+        """최소 원소 제거 및 반환"""
+        if len(self.elements) == 0:
+            return None
+
+        if len(self.elements) == 1:
+            return self.elements.pop()
+
+        min_val = self.elements[0]
+        self.elements[0] = self.elements.pop()
+        self.heapify_down(0)
+        return min_val
+
+    def heapify_down(self, i: int) -> None:
+        """하향식 힙화"""
+        while True:
+            smallest = i
+            left = self.left_child(i)
+            right = self.right_child(i)
+
+            if left < len(self.elements) and self.elements[left] < self.elements[smallest]:
+                smallest = left
+
+            if right < len(self.elements) and self.elements[right] < self.elements[smallest]:
+                smallest = right
+
+            if smallest != i:
+                self.swap(i, smallest)
+                i = smallest
+            else:
+                break
+
+    def peek(self) -> any:
+        """최소 원소 조회"""
+        if len(self.elements) > 0:
+            return self.elements[0]
+        return None
+
+    def __len__(self) -> int:
+        return len(self.elements)
+
+
+# ============================================
+# MaxHeap
+# ============================================
+
+class MaxHeap:
+    """최대 힙"""
+    elements: list[any]
+
+    def __init__(self):
+        self.elements = []
+
+    def parent(self, i: int) -> int:
+        return (i - 1) // 2
+
+    def left_child(self, i: int) -> int:
+        return 2 * i + 1
+
+    def right_child(self, i: int) -> int:
+        return 2 * i + 2
+
+    def swap(self, i: int, j: int) -> None:
+        tmp = self.elements[i]
+        self.elements[i] = self.elements[j]
+        self.elements[j] = tmp
+
+    def push(self, element: any) -> None:
+        self.elements.append(element)
+        self.heapify_up(len(self.elements) - 1)
+
+    def heapify_up(self, i: int) -> None:
+        while i > 0 and self.elements[self.parent(i)] < self.elements[i]:
+            self.swap(i, self.parent(i))
+            i = self.parent(i)
+
+    def pop(self) -> any:
+        if len(self.elements) == 0:
+            return None
+
+        if len(self.elements) == 1:
+            return self.elements.pop()
+
+        max_val = self.elements[0]
+        self.elements[0] = self.elements.pop()
+        self.heapify_down(0)
+        return max_val
+
+    def heapify_down(self, i: int) -> None:
+        while True:
+            largest = i
+            left = self.left_child(i)
+            right = self.right_child(i)
+
+            if left < len(self.elements) and self.elements[left] > self.elements[largest]:
+                largest = left
+
+            if right < len(self.elements) and self.elements[right] > self.elements[largest]:
+                largest = right
+
+            if largest != i:
+                self.swap(i, largest)
+                i = largest
+            else:
+                break
+
+    def peek(self) -> any:
+        if len(self.elements) > 0:
+            return self.elements[0]
+        return None
+
+    def __len__(self) -> int:
+        return len(self.elements)
+
+
+# ============================================
+# Counter (빈도 카운팅)
+# ============================================
+
+class Counter:
+    """원소의 빈도 카운팅"""
+    counts: dict[any, int]
+
+    def __init__(self, elements: list[any] = None):
+        self.counts = {}
+        if elements is not None:
+            for e in elements:
+                if e in self.counts:
+                    self.counts[e] = self.counts[e] + 1
+                else:
+                    self.counts[e] = 1
+
+    def add(self, element: any, count: int = 1) -> None:
+        """원소의 개수 증가"""
+        if element in self.counts:
+            self.counts[element] = self.counts[element] + count
+        else:
+            self.counts[element] = count
+
+    def most_common(self, n: int = None) -> list[tuple[any, int]]:
+        """가장 빈번한 n개 원소"""
+        # 정렬 (간단한 버블소트)
+        items = []
+        for e in self.counts:
+            items.append((e, self.counts[e]))
+
+        for i in range(len(items)):
+            for j in range(i + 1, len(items)):
+                if items[i][1] < items[j][1]:
+                    tmp = items[i]
+                    items[i] = items[j]
+                    items[j] = tmp
+
+        if n is None or n >= len(items):
+            return items
+        return items[:n]
+
+    def __len__(self) -> int:
+        return len(self.counts)

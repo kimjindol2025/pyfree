@@ -1,0 +1,343 @@
+# PyFree Compiler Stdlib: Data Structures
+# 기본 데이터 구조 (LinkedList, Tree, Graph)
+
+# ============================================
+# LinkedList
+# ============================================
+
+class ListNode:
+    """링크드 리스트 노드"""
+    value: any
+    next: ListNode
+
+    def __init__(self, value: any):
+        self.value = value
+        self.next = None
+
+
+class LinkedList:
+    """싱글 링크드 리스트"""
+    head: ListNode
+    size: int
+
+    def __init__(self):
+        self.head = None
+        self.size = 0
+
+    def append(self, value: any) -> None:
+        """끝에 추가"""
+        new_node = ListNode(value)
+        if self.head is None:
+            self.head = new_node
+        else:
+            current = self.head
+            while current.next is not None:
+                current = current.next
+            current.next = new_node
+        self.size = self.size + 1
+
+    def prepend(self, value: any) -> None:
+        """앞에 추가"""
+        new_node = ListNode(value)
+        new_node.next = self.head
+        self.head = new_node
+        self.size = self.size + 1
+
+    def insert(self, index: int, value: any) -> None:
+        """특정 위치에 삽입"""
+        if index < 0 or index > self.size:
+            return
+
+        if index == 0:
+            self.prepend(value)
+            return
+
+        new_node = ListNode(value)
+        current = self.head
+        for i in range(index - 1):
+            current = current.next
+
+        new_node.next = current.next
+        current.next = new_node
+        self.size = self.size + 1
+
+    def remove(self, index: int) -> any:
+        """특정 위치의 원소 제거"""
+        if index < 0 or index >= self.size or self.head is None:
+            return None
+
+        if index == 0:
+            value = self.head.value
+            self.head = self.head.next
+            self.size = self.size - 1
+            return value
+
+        current = self.head
+        for i in range(index - 1):
+            current = current.next
+
+        value = current.next.value
+        current.next = current.next.next
+        self.size = self.size - 1
+        return value
+
+    def get(self, index: int) -> any:
+        """특정 위치의 원소 조회"""
+        if index < 0 or index >= self.size:
+            return None
+
+        current = self.head
+        for i in range(index):
+            current = current.next
+
+        return current.value
+
+    def __len__(self) -> int:
+        return self.size
+
+
+# ============================================
+# TreeNode & BinarySearchTree
+# ============================================
+
+class TreeNode:
+    """트리 노드"""
+    value: any
+    left: TreeNode
+    right: TreeNode
+
+    def __init__(self, value: any):
+        self.value = value
+        self.left = None
+        self.right = None
+
+
+class BinarySearchTree:
+    """이진 탐색 트리"""
+    root: TreeNode
+    size: int
+
+    def __init__(self):
+        self.root = None
+        self.size = 0
+
+    def insert(self, value: any) -> None:
+        """값 삽입"""
+        if self.root is None:
+            self.root = TreeNode(value)
+            self.size = 1
+        else:
+            self._insert_recursive(self.root, value)
+
+    def _insert_recursive(self, node: TreeNode, value: any) -> None:
+        if value < node.value:
+            if node.left is None:
+                node.left = TreeNode(value)
+                self.size = self.size + 1
+            else:
+                self._insert_recursive(node.left, value)
+        elif value > node.value:
+            if node.right is None:
+                node.right = TreeNode(value)
+                self.size = self.size + 1
+            else:
+                self._insert_recursive(node.right, value)
+
+    def search(self, value: any) -> bool:
+        """값 검색"""
+        return self._search_recursive(self.root, value)
+
+    def _search_recursive(self, node: TreeNode, value: any) -> bool:
+        if node is None:
+            return False
+
+        if value == node.value:
+            return True
+        elif value < node.value:
+            return self._search_recursive(node.left, value)
+        else:
+            return self._search_recursive(node.right, value)
+
+    def inorder(self) -> list[any]:
+        """중위 순회"""
+        result = []
+        self._inorder_recursive(self.root, result)
+        return result
+
+    def _inorder_recursive(self, node: TreeNode, result: list[any]) -> None:
+        if node is None:
+            return
+
+        self._inorder_recursive(node.left, result)
+        result.append(node.value)
+        self._inorder_recursive(node.right, result)
+
+    def preorder(self) -> list[any]:
+        """전위 순회"""
+        result = []
+        self._preorder_recursive(self.root, result)
+        return result
+
+    def _preorder_recursive(self, node: TreeNode, result: list[any]) -> None:
+        if node is None:
+            return
+
+        result.append(node.value)
+        self._preorder_recursive(node.left, result)
+        self._preorder_recursive(node.right, result)
+
+    def postorder(self) -> list[any]:
+        """후위 순회"""
+        result = []
+        self._postorder_recursive(self.root, result)
+        return result
+
+    def _postorder_recursive(self, node: TreeNode, result: list[any]) -> None:
+        if node is None:
+            return
+
+        self._postorder_recursive(node.left, result)
+        self._postorder_recursive(node.right, result)
+        result.append(node.value)
+
+    def __len__(self) -> int:
+        return self.size
+
+
+# ============================================
+# Graph (인접 리스트 기반)
+# ============================================
+
+class Graph:
+    """무방향 그래프"""
+    adjacency_list: dict[any, list[any]]
+
+    def __init__(self):
+        self.adjacency_list = {}
+
+    def add_vertex(self, vertex: any) -> None:
+        """정점 추가"""
+        if vertex not in self.adjacency_list:
+            self.adjacency_list[vertex] = []
+
+    def add_edge(self, vertex1: any, vertex2: any) -> None:
+        """간선 추가"""
+        self.add_vertex(vertex1)
+        self.add_vertex(vertex2)
+
+        if vertex2 not in self.adjacency_list[vertex1]:
+            self.adjacency_list[vertex1].append(vertex2)
+
+        if vertex1 not in self.adjacency_list[vertex2]:
+            self.adjacency_list[vertex2].append(vertex1)
+
+    def get_neighbors(self, vertex: any) -> list[any]:
+        """이웃 정점 반환"""
+        if vertex in self.adjacency_list:
+            return self.adjacency_list[vertex]
+        return []
+
+    def bfs(self, start: any) -> list[any]:
+        """너비 우선 탐색"""
+        visited = {}
+        queue = []
+
+        for v in self.adjacency_list:
+            visited[v] = False
+
+        queue.append(start)
+        visited[start] = True
+        result = []
+
+        while len(queue) > 0:
+            vertex = queue.pop(0)
+            result.append(vertex)
+
+            for neighbor in self.get_neighbors(vertex):
+                if not visited[neighbor]:
+                    visited[neighbor] = True
+                    queue.append(neighbor)
+
+        return result
+
+    def dfs(self, start: any) -> list[any]:
+        """깊이 우선 탐색"""
+        visited = {}
+        for v in self.adjacency_list:
+            visited[v] = False
+
+        result = []
+        self._dfs_recursive(start, visited, result)
+        return result
+
+    def _dfs_recursive(self, vertex: any, visited: dict[any, bool], result: list[any]) -> None:
+        visited[vertex] = True
+        result.append(vertex)
+
+        for neighbor in self.get_neighbors(vertex):
+            if not visited[neighbor]:
+                self._dfs_recursive(neighbor, visited, result)
+
+    def __len__(self) -> int:
+        return len(self.adjacency_list)
+
+
+# ============================================
+# DirectedGraph
+# ============================================
+
+class DirectedGraph:
+    """방향 그래프"""
+    adjacency_list: dict[any, list[any]]
+
+    def __init__(self):
+        self.adjacency_list = {}
+
+    def add_vertex(self, vertex: any) -> None:
+        """정점 추가"""
+        if vertex not in self.adjacency_list:
+            self.adjacency_list[vertex] = []
+
+    def add_edge(self, from_vertex: any, to_vertex: any) -> None:
+        """간선 추가 (방향성)"""
+        self.add_vertex(from_vertex)
+        self.add_vertex(to_vertex)
+
+        if to_vertex not in self.adjacency_list[from_vertex]:
+            self.adjacency_list[from_vertex].append(to_vertex)
+
+    def get_neighbors(self, vertex: any) -> list[any]:
+        """이웃 정점 반환"""
+        if vertex in self.adjacency_list:
+            return self.adjacency_list[vertex]
+        return []
+
+    def topological_sort(self) -> list[any]:
+        """위상 정렬 (DFS 기반)"""
+        visited = {}
+        stack = []
+
+        for v in self.adjacency_list:
+            visited[v] = False
+
+        for v in self.adjacency_list:
+            if not visited[v]:
+                self._topological_sort_dfs(v, visited, stack)
+
+        result = []
+        while len(stack) > 0:
+            result.append(stack.pop())
+
+        return result
+
+    def _topological_sort_dfs(self, vertex: any, visited: dict[any, bool], stack: list[any]) -> None:
+        visited[vertex] = True
+
+        for neighbor in self.get_neighbors(vertex):
+            if not visited[neighbor]:
+                self._topological_sort_dfs(neighbor, visited, stack)
+
+        stack.append(vertex)
+
+    def __len__(self) -> int:
+        return len(self.adjacency_list)
