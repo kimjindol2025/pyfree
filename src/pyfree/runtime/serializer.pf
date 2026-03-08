@@ -1,0 +1,378 @@
+# PyFree Runtime: Bytecode Serializer
+# IR을 저장/로드 가능한 바이트코드로 변환
+
+from runtime.instruction import IRProgram, IRFunction, Instruction, Opcode
+
+
+class BytecodeSerializer:
+    """바이트코드 직렬화 및 역직렬화"""
+
+    # 매직 넘버 (4바이트)
+    MAGIC = "PyFr"
+    # 버전 (1바이트)
+    VERSION = 1
+
+    def __init__(self):
+        self.buffer = ""
+        self.offset = 0
+
+    def serialize(self, program: IRProgram) -> str:
+        """IRProgram을 바이트코드 문자열로 변환"""
+        self.buffer = ""
+
+        # 1. 헤더
+        self.buffer = self.buffer + self.MAGIC
+        self.buffer = self.buffer + chr(self.VERSION)
+
+        # 2. 상수 풀
+        self._serialize_constants(program.constants)
+
+        # 3. 함수 정의
+        self._serialize_functions(program.functions)
+
+        # 4. 메인 코드
+        self._serialize_code(program.code)
+
+        return self.buffer
+
+    def deserialize(self, data: str) -> IRProgram:
+        """바이트코드 문자열을 IRProgram으로 변환"""
+        self.buffer = data
+        self.offset = 0
+
+        # 1. 헤더 검증
+        if len(self.buffer) < 5:
+            raise Exception("Invalid bytecode: too short")
+
+        magic = self.buffer[0:4]
+        if magic != self.MAGIC:
+            raise Exception("Invalid bytecode: wrong magic number")
+
+        version = ord(self.buffer[4])
+        if version != self.VERSION:
+            raise Exception(f"Invalid bytecode: unsupported version {version}")
+
+        self.offset = 5
+
+        # 2. 상수 풀
+        constants = self._deserialize_constants()
+
+        # 3. 함수 정의
+        functions = self._deserialize_functions()
+
+        # 4. 메인 코드
+        code = self._deserialize_code()
+
+        # IRProgram 생성
+        program = IRProgram()
+        program.constants = constants
+        program.functions = functions
+        program.code = code
+
+        return program
+
+    def _serialize_constants(self, constants: list) -> None:
+        """상수 풀 직렬화"""
+        # 상수 개수 (2바이트)
+        count = len(constants)
+        self.buffer = self.buffer + chr((count >> 8) & 0xFF)
+        self.buffer = self.buffer + chr(count & 0xFF)
+
+        # 각 상수 직렬화
+        for const in constants:
+            self._serialize_value(const)
+
+    def _deserialize_constants(self) -> list:
+        """상수 풀 역직렬화"""
+        # 상수 개수 읽기
+        count = (ord(self.buffer[self.offset]) << 8) | ord(self.buffer[self.offset + 1])
+        self.offset = self.offset + 2
+
+        constants = []
+        for i in range(count):
+            value = self._deserialize_value()
+            constants.append(value)
+
+        return constants
+
+    def _serialize_value(self, value) -> None:
+        """값을 직렬화"""
+        if value is None:
+            self.buffer = self.buffer + chr(0)  # NULL
+
+        elif isinstance(value, bool):
+            self.buffer = self.buffer + chr(1)  # BOOL
+            self.buffer = self.buffer + chr(1 if value else 0)
+
+        elif isinstance(value, int):
+            self.buffer = self.buffer + chr(2)  # INT
+            # 정수 (4바이트 Big-endian)
+            self.buffer = self.buffer + chr((value >> 24) & 0xFF)
+            self.buffer = self.buffer + chr((value >> 16) & 0xFF)
+            self.buffer = self.buffer + chr((value >> 8) & 0xFF)
+            self.buffer = self.buffer + chr(value & 0xFF)
+
+        elif isinstance(value, float):
+            self.buffer = self.buffer + chr(3)  # FLOAT
+            # 부동소수점 (간단한 문자열 표현)
+            str_val = str(value)
+            self._serialize_string(str_val)
+
+        elif isinstance(value, str):
+            self.buffer = self.buffer + chr(4)  # STRING
+            self._serialize_string(value)
+
+        elif isinstance(value, list):
+            self.buffer = self.buffer + chr(5)  # LIST
+            self.buffer = self.buffer + chr((len(value) >> 8) & 0xFF)
+            self.buffer = self.buffer + chr(len(value) & 0xFF)
+            for item in value:
+                self._serialize_value(item)
+
+        elif isinstance(value, dict):
+            self.buffer = self.buffer + chr(6)  # DICT
+            self.buffer = self.buffer + chr((len(value) >> 8) & 0xFF)
+            self.buffer = self.buffer + chr(len(value) & 0xFF)
+            for key in value:
+                self._serialize_string(key)
+                self._serialize_value(value[key])
+
+        else:
+            # 알 수 없는 타입은 문자열로 변환
+            self.buffer = self.buffer + chr(4)  # STRING
+            self._serialize_string(str(value))
+
+    def _deserialize_value(self):
+        """값을 역직렬화"""
+        type_byte = ord(self.buffer[self.offset])
+        self.offset = self.offset + 1
+
+        if type_byte == 0:  # NULL
+            return None
+
+        elif type_byte == 1:  # BOOL
+            value = ord(self.buffer[self.offset]) != 0
+            self.offset = self.offset + 1
+            return value
+
+        elif type_byte == 2:  # INT
+            value = (ord(self.buffer[self.offset]) << 24) | (ord(self.buffer[self.offset + 1]) << 16) | (ord(self.buffer[self.offset + 2]) << 8) | ord(self.buffer[self.offset + 3])
+            self.offset = self.offset + 4
+            # 부호 처리
+            if value >= 2147483648:
+                value = value - 4294967296
+            return value
+
+        elif type_byte == 3:  # FLOAT
+            str_val = self._deserialize_string()
+            return float(str_val)
+
+        elif type_byte == 4:  # STRING
+            return self._deserialize_string()
+
+        elif type_byte == 5:  # LIST
+            count = (ord(self.buffer[self.offset]) << 8) | ord(self.buffer[self.offset + 1])
+            self.offset = self.offset + 2
+            result = []
+            for i in range(count):
+                result.append(self._deserialize_value())
+            return result
+
+        elif type_byte == 6:  # DICT
+            count = (ord(self.buffer[self.offset]) << 8) | ord(self.buffer[self.offset + 1])
+            self.offset = self.offset + 2
+            result = {}
+            for i in range(count):
+                key = self._deserialize_string()
+                value = self._deserialize_value()
+                result[key] = value
+            return result
+
+        else:
+            raise Exception(f"Unknown type byte: {type_byte}")
+
+    def _serialize_string(self, s: str) -> None:
+        """문자열 직렬화 (길이 + 데이터)"""
+        length = len(s)
+        self.buffer = self.buffer + chr((length >> 8) & 0xFF)
+        self.buffer = self.buffer + chr(length & 0xFF)
+        self.buffer = self.buffer + s
+
+    def _deserialize_string(self) -> str:
+        """문자열 역직렬화"""
+        length = (ord(self.buffer[self.offset]) << 8) | ord(self.buffer[self.offset + 1])
+        self.offset = self.offset + 2
+        result = self.buffer[self.offset : self.offset + length]
+        self.offset = self.offset + length
+        return result
+
+    def _serialize_functions(self, functions: dict) -> None:
+        """함수 정의 직렬화"""
+        # 함수 개수 (2바이트)
+        count = len(functions)
+        self.buffer = self.buffer + chr((count >> 8) & 0xFF)
+        self.buffer = self.buffer + chr(count & 0xFF)
+
+        # 각 함수 직렬화
+        for func_name in functions:
+            func = functions[func_name]
+            self._serialize_function(func)
+
+    def _deserialize_functions(self) -> dict:
+        """함수 정의 역직렬화"""
+        # 함수 개수 읽기
+        count = (ord(self.buffer[self.offset]) << 8) | ord(self.buffer[self.offset + 1])
+        self.offset = self.offset + 2
+
+        functions = {}
+        for i in range(count):
+            func = self._deserialize_function()
+            functions[func.name] = func
+
+        return functions
+
+    def _serialize_function(self, func: IRFunction) -> None:
+        """함수 직렬화"""
+        # 함수 이름
+        self._serialize_string(func.name)
+
+        # 파라미터 개수
+        self.buffer = self.buffer + chr(func.param_count & 0xFF)
+
+        # 로컬 변수 개수
+        self.buffer = self.buffer + chr(func.local_count & 0xFF)
+
+        # async 플래그
+        self.buffer = self.buffer + chr(1 if func.is_async else 0)
+
+        # 파라미터 이름들
+        for param_name in func.param_names:
+            self._serialize_string(param_name)
+
+        # 함수 코드
+        self._serialize_code(func.code)
+
+    def _deserialize_function(self) -> IRFunction:
+        """함수 역직렬화"""
+        # 함수 이름
+        name = self._deserialize_string()
+
+        # 파라미터 개수
+        param_count = ord(self.buffer[self.offset])
+        self.offset = self.offset + 1
+
+        # 로컬 변수 개수
+        local_count = ord(self.buffer[self.offset])
+        self.offset = self.offset + 1
+
+        # async 플래그
+        is_async = ord(self.buffer[self.offset]) != 0
+        self.offset = self.offset + 1
+
+        # 함수 객체 생성
+        func = IRFunction(name, param_count, local_count)
+        func.is_async = is_async
+
+        # 파라미터 이름들
+        for i in range(param_count):
+            param_name = self._deserialize_string()
+            func.param_names.append(param_name)
+
+        # 함수 코드
+        func.code = self._deserialize_code()
+
+        return func
+
+    def _serialize_code(self, code: list) -> None:
+        """코드 직렬화"""
+        # 명령어 개수 (2바이트)
+        count = len(code)
+        self.buffer = self.buffer + chr((count >> 8) & 0xFF)
+        self.buffer = self.buffer + chr(count & 0xFF)
+
+        # 각 명령어 직렬화
+        for instr in code:
+            self._serialize_instruction(instr)
+
+    def _deserialize_code(self) -> list:
+        """코드 역직렬화"""
+        # 명령어 개수 읽기
+        count = (ord(self.buffer[self.offset]) << 8) | ord(self.buffer[self.offset + 1])
+        self.offset = self.offset + 2
+
+        code = []
+        for i in range(count):
+            instr = self._deserialize_instruction()
+            code.append(instr)
+
+        return code
+
+    def _serialize_instruction(self, instr: Instruction) -> None:
+        """명령어 직렬화"""
+        # 명령어 opcode
+        self._serialize_string(instr.opcode)
+
+        # 인자 개수
+        arg_count = len(instr.args)
+        self.buffer = self.buffer + chr(arg_count & 0xFF)
+
+        # 각 인자 직렬화
+        for arg in instr.args:
+            if isinstance(arg, int):
+                self.buffer = self.buffer + chr(1)  # INT
+                self.buffer = self.buffer + chr((arg >> 8) & 0xFF)
+                self.buffer = self.buffer + chr(arg & 0xFF)
+            else:
+                self.buffer = self.buffer + chr(2)  # STRING
+                self._serialize_string(str(arg))
+
+        # 행/열 정보 (옵션)
+        line = instr.line if instr.line is not None else 0
+        column = instr.column if instr.column is not None else 0
+        self.buffer = self.buffer + chr((line >> 8) & 0xFF)
+        self.buffer = self.buffer + chr(line & 0xFF)
+        self.buffer = self.buffer + chr((column >> 8) & 0xFF)
+        self.buffer = self.buffer + chr(column & 0xFF)
+
+    def _deserialize_instruction(self) -> Instruction:
+        """명령어 역직렬화"""
+        # opcode
+        opcode = self._deserialize_string()
+
+        # 인자 개수
+        arg_count = ord(self.buffer[self.offset])
+        self.offset = self.offset + 1
+
+        # 각 인자 역직렬화
+        args = []
+        for i in range(arg_count):
+            arg_type = ord(self.buffer[self.offset])
+            self.offset = self.offset + 1
+
+            if arg_type == 1:  # INT
+                value = (ord(self.buffer[self.offset]) << 8) | ord(self.buffer[self.offset + 1])
+                self.offset = self.offset + 2
+                args.append(value)
+            else:  # STRING
+                value = self._deserialize_string()
+                args.append(value)
+
+        # 행/열 정보
+        line = (ord(self.buffer[self.offset]) << 8) | ord(self.buffer[self.offset + 1])
+        self.offset = self.offset + 2
+        column = (ord(self.buffer[self.offset]) << 8) | ord(self.buffer[self.offset + 1])
+        self.offset = self.offset + 2
+
+        return Instruction(opcode, args, line, column)
+
+
+def serialize_program(program: IRProgram) -> str:
+    """프로그램 직렬화 (편의 함수)"""
+    serializer = BytecodeSerializer()
+    return serializer.serialize(program)
+
+
+def deserialize_program(data: str) -> IRProgram:
+    """프로그램 역직렬화 (편의 함수)"""
+    serializer = BytecodeSerializer()
+    return serializer.deserialize(data)
