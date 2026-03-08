@@ -1,0 +1,550 @@
+# PyFree Compiler: Type Checker
+# AST 검증 및 타입 추론
+
+from types import (
+    Token, Expression, Statement, ASTNode,
+    IntLiteral, FloatLiteral, StringLiteral, BoolLiteral,
+    ListLiteral, DictLiteral, Identifier,
+    BinaryOp, UnaryOp, CallExpression, IndexExpression,
+    AttributeExpression, AssignmentStatement,
+    FunctionDef, ClassDef, IfStatement,
+    ForStatement, WhileStatement, ReturnStatement,
+    BreakStatement, ContinueStatement, ExpressionStatement,
+    Type, PrimitiveType, FunctionType, GenericType, UnionType,
+    CompilerError, TypeError, NameError, ValueError
+)
+
+
+class Scope:
+    """심볼 테이블 스코프"""
+    def __init__(self, parent=None):
+        self.parent = parent
+        self.symbols = {}
+        self.types = {}
+
+    def define(self, name: str, type_obj: Type) -> None:
+        """심볼 정의"""
+        self.symbols[name] = True
+        self.types[name] = type_obj
+
+    def lookup(self, name: str) -> Type:
+        """심볼 조회"""
+        if name in self.types:
+            return self.types[name]
+        if self.parent is not None:
+            return self.parent.lookup(name)
+        return None
+
+    def is_defined(self, name: str) -> bool:
+        """심볼 정의 여부 확인"""
+        if name in self.symbols:
+            return True
+        if self.parent is not None:
+            return self.parent.is_defined(name)
+        return False
+
+
+class TypeChecker:
+    """AST 타입 검증 및 추론"""
+
+    def __init__(self):
+        self.global_scope = Scope()
+        self.current_scope = self.global_scope
+        self.function_stack = []
+        self.errors = []
+        self.builtin_functions = {}
+        self.builtin_types = {}
+        self._setup_builtins()
+
+    def _setup_builtins(self) -> None:
+        """내장 함수 및 타입 설정"""
+        # 내장 타입
+        self.builtin_types["int"] = PrimitiveType("int")
+        self.builtin_types["float"] = PrimitiveType("float")
+        self.builtin_types["str"] = PrimitiveType("str")
+        self.builtin_types["bool"] = PrimitiveType("bool")
+        self.builtin_types["list"] = PrimitiveType("list")
+        self.builtin_types["dict"] = PrimitiveType("dict")
+        self.builtin_types["none"] = PrimitiveType("none")
+
+        # 내장 함수
+        self.builtin_functions["print"] = FunctionType([], PrimitiveType("none"))
+        self.builtin_functions["len"] = FunctionType([PrimitiveType("list")], PrimitiveType("int"))
+        self.builtin_functions["range"] = FunctionType([PrimitiveType("int")], PrimitiveType("list"))
+        self.builtin_functions["str"] = FunctionType([], PrimitiveType("str"))
+        self.builtin_functions["int"] = FunctionType([], PrimitiveType("int"))
+        self.builtin_functions["float"] = FunctionType([], PrimitiveType("float"))
+        self.builtin_functions["list"] = FunctionType([], PrimitiveType("list"))
+        self.builtin_functions["dict"] = FunctionType([], PrimitiveType("dict"))
+        self.builtin_functions["bool"] = FunctionType([], PrimitiveType("bool"))
+        self.builtin_functions["isinstance"] = FunctionType([], PrimitiveType("bool"))
+        self.builtin_functions["type"] = FunctionType([], PrimitiveType("str"))
+        self.builtin_functions["min"] = FunctionType([], PrimitiveType("any"))
+        self.builtin_functions["max"] = FunctionType([], PrimitiveType("any"))
+        self.builtin_functions["sum"] = FunctionType([], PrimitiveType("any"))
+        self.builtin_functions["any"] = FunctionType([], PrimitiveType("bool"))
+        self.builtin_functions["all"] = FunctionType([], PrimitiveType("bool"))
+        self.builtin_functions["enumerate"] = FunctionType([], PrimitiveType("list"))
+        self.builtin_functions["zip"] = FunctionType([], PrimitiveType("list"))
+        self.builtin_functions["map"] = FunctionType([], PrimitiveType("list"))
+        self.builtin_functions["filter"] = FunctionType([], PrimitiveType("list"))
+        self.builtin_functions["sorted"] = FunctionType([], PrimitiveType("list"))
+        self.builtin_functions["reversed"] = FunctionType([], PrimitiveType("list"))
+
+    def check(self, statements: list[Statement]) -> list[Statement]:
+        """AST 타입 검증"""
+        self.errors = []
+        result = []
+
+        for stmt in statements:
+            if stmt is None:
+                continue
+            checked = self.check_statement(stmt)
+            if checked is not None:
+                result.append(checked)
+
+        if self.errors:
+            for error in self.errors:
+                print(error)
+
+        return result
+
+    def check_statement(self, stmt: Statement) -> Statement:
+        """문장 타입 검증"""
+        if stmt is None:
+            return None
+
+        if isinstance(stmt, FunctionDef):
+            return self.check_function_def(stmt)
+        elif isinstance(stmt, ClassDef):
+            return self.check_class_def(stmt)
+        elif isinstance(stmt, IfStatement):
+            return self.check_if_statement(stmt)
+        elif isinstance(stmt, ForStatement):
+            return self.check_for_statement(stmt)
+        elif isinstance(stmt, WhileStatement):
+            return self.check_while_statement(stmt)
+        elif isinstance(stmt, ReturnStatement):
+            return self.check_return_statement(stmt)
+        elif isinstance(stmt, AssignmentStatement):
+            return self.check_assignment_statement(stmt)
+        elif isinstance(stmt, ExpressionStatement):
+            if stmt.expression is not None:
+                stmt.expression = self.check_expression(stmt.expression)
+            return stmt
+        else:
+            return stmt
+
+    def check_function_def(self, func: FunctionDef) -> FunctionDef:
+        """함수 정의 검증"""
+        # 함수 이름으로 스코프 정의
+        func_type = FunctionType([], PrimitiveType(func.return_type))
+        self.current_scope.define(func.name, func_type)
+
+        # 새로운 스코프 생성
+        prev_scope = self.current_scope
+        self.current_scope = Scope(prev_scope)
+        self.function_stack.append(func.name)
+
+        # 매개변수 정의
+        for param in func.params:
+            self.current_scope.define(param, PrimitiveType("any"))
+
+        # 함수 본문 검증
+        checked_body = []
+        for stmt in func.body:
+            if stmt is not None:
+                checked = self.check_statement(stmt)
+                if checked is not None:
+                    checked_body.append(checked)
+
+        # 반환 타입 검증
+        has_return = False
+        for stmt in checked_body:
+            if isinstance(stmt, ReturnStatement):
+                has_return = True
+                if stmt.value is not None:
+                    return_type = self.infer_type(stmt.value)
+                    if not self.is_type_compatible(return_type, func.return_type):
+                        self.errors.append(
+                            TypeError(f"Return type mismatch in {func.name}: expected {func.return_type}, got {return_type.name}", 0, 0)
+                        )
+
+        func.body = checked_body
+        self.function_stack.pop()
+        self.current_scope = prev_scope
+        return func
+
+    def check_class_def(self, cls: ClassDef) -> ClassDef:
+        """클래스 정의 검증"""
+        # 클래스 이름으로 스코프 정의
+        self.current_scope.define(cls.name, PrimitiveType("class"))
+
+        # 새로운 스코프 생성
+        prev_scope = self.current_scope
+        self.current_scope = Scope(prev_scope)
+
+        # 메서드 검증
+        checked_methods = []
+        for method in cls.methods:
+            if isinstance(method, FunctionDef):
+                # 메서드의 첫 번째 매개변수는 self
+                checked = self.check_function_def(method)
+                checked_methods.append(checked)
+
+        # 클래스 본문 검증
+        checked_body = []
+        for stmt in cls.body:
+            if stmt is not None:
+                checked = self.check_statement(stmt)
+                if checked is not None:
+                    checked_body.append(checked)
+
+        cls.methods = checked_methods
+        cls.body = checked_body
+        self.current_scope = prev_scope
+        return cls
+
+    def check_if_statement(self, stmt: IfStatement) -> IfStatement:
+        """if 문 검증"""
+        # 조건 표현식 검증
+        condition_type = self.infer_type(stmt.condition)
+        if not self.is_type_compatible(condition_type, "bool"):
+            self.errors.append(
+                TypeError(f"If condition must be bool, got {condition_type.name}", stmt.condition.line, stmt.condition.column)
+            )
+
+        # 그러면 블록 검증
+        checked_then = []
+        for s in stmt.then_body:
+            if s is not None:
+                checked = self.check_statement(s)
+                if checked is not None:
+                    checked_then.append(checked)
+
+        # 그렇지 않으면 블록 검증
+        checked_else = []
+        for s in stmt.else_body:
+            if s is not None:
+                checked = self.check_statement(s)
+                if checked is not None:
+                    checked_else.append(checked)
+
+        stmt.condition = self.check_expression(stmt.condition)
+        stmt.then_body = checked_then
+        stmt.else_body = checked_else
+        return stmt
+
+    def check_for_statement(self, stmt: ForStatement) -> ForStatement:
+        """for 문 검증"""
+        # 반복 대상 검증
+        iter_type = self.infer_type(stmt.iter_expr)
+        if not self.is_iterable(iter_type):
+            self.errors.append(
+                TypeError(f"For loop requires iterable, got {iter_type.name}", stmt.iter_expr.line, stmt.iter_expr.column)
+            )
+
+        # 루프 변수 정의
+        self.current_scope.define(stmt.target, PrimitiveType("any"))
+
+        # 루프 본문 검증
+        checked_body = []
+        for s in stmt.body:
+            if s is not None:
+                checked = self.check_statement(s)
+                if checked is not None:
+                    checked_body.append(checked)
+
+        stmt.iter_expr = self.check_expression(stmt.iter_expr)
+        stmt.body = checked_body
+        return stmt
+
+    def check_while_statement(self, stmt: WhileStatement) -> WhileStatement:
+        """while 문 검증"""
+        # 조건 표현식 검증
+        condition_type = self.infer_type(stmt.condition)
+        if not self.is_type_compatible(condition_type, "bool"):
+            self.errors.append(
+                TypeError(f"While condition must be bool, got {condition_type.name}", stmt.condition.line, stmt.condition.column)
+            )
+
+        # 루프 본문 검증
+        checked_body = []
+        for s in stmt.body:
+            if s is not None:
+                checked = self.check_statement(s)
+                if checked is not None:
+                    checked_body.append(checked)
+
+        stmt.condition = self.check_expression(stmt.condition)
+        stmt.body = checked_body
+        return stmt
+
+    def check_return_statement(self, stmt: ReturnStatement) -> ReturnStatement:
+        """반환 문 검증"""
+        if len(self.function_stack) == 0:
+            self.errors.append(
+                CompilerError("Return statement outside function", stmt.line, stmt.column)
+            )
+
+        if stmt.value is not None:
+            stmt.value = self.check_expression(stmt.value)
+
+        return stmt
+
+    def check_assignment_statement(self, stmt: AssignmentStatement) -> AssignmentStatement:
+        """할당 문 검증"""
+        # 우변 표현식 검증
+        value_type = self.infer_type(stmt.value)
+
+        # 변수 정의 또는 검증
+        if not self.current_scope.is_defined(stmt.target):
+            self.current_scope.define(stmt.target, value_type)
+        else:
+            # 기존 변수와 타입 호환성 검증
+            existing_type = self.current_scope.lookup(stmt.target)
+            if existing_type is not None and not self.is_type_compatible(value_type, existing_type):
+                # 동적 타입이므로 경고만 발생
+                pass
+
+        stmt.value = self.check_expression(stmt.value)
+        return stmt
+
+    def check_expression(self, expr: Expression) -> Expression:
+        """표현식 검증"""
+        if expr is None:
+            return None
+
+        if isinstance(expr, IntLiteral):
+            return expr
+        elif isinstance(expr, FloatLiteral):
+            return expr
+        elif isinstance(expr, StringLiteral):
+            return expr
+        elif isinstance(expr, BoolLiteral):
+            return expr
+        elif isinstance(expr, ListLiteral):
+            checked_elements = []
+            for elem in expr.elements:
+                checked = self.check_expression(elem)
+                if checked is not None:
+                    checked_elements.append(checked)
+            expr.elements = checked_elements
+            return expr
+        elif isinstance(expr, DictLiteral):
+            checked_keys = []
+            checked_values = []
+            for key in expr.keys:
+                checked = self.check_expression(key)
+                if checked is not None:
+                    checked_keys.append(checked)
+            for val in expr.values:
+                checked = self.check_expression(val)
+                if checked is not None:
+                    checked_values.append(checked)
+            expr.keys = checked_keys
+            expr.values = checked_values
+            return expr
+        elif isinstance(expr, Identifier):
+            # 식별자 검증
+            if not self.current_scope.is_defined(expr.name):
+                if expr.name not in self.builtin_functions:
+                    self.errors.append(
+                        NameError(f"Name '{expr.name}' is not defined", expr.line, expr.column)
+                    )
+            return expr
+        elif isinstance(expr, BinaryOp):
+            return self.check_binary_op(expr)
+        elif isinstance(expr, UnaryOp):
+            return self.check_unary_op(expr)
+        elif isinstance(expr, CallExpression):
+            return self.check_call_expression(expr)
+        elif isinstance(expr, IndexExpression):
+            return self.check_index_expression(expr)
+        elif isinstance(expr, AttributeExpression):
+            return self.check_attribute_expression(expr)
+        else:
+            return expr
+
+    def check_binary_op(self, expr: BinaryOp) -> BinaryOp:
+        """이항 연산 검증"""
+        left_type = self.infer_type(expr.left)
+        right_type = self.infer_type(expr.right)
+
+        expr.left = self.check_expression(expr.left)
+        expr.right = self.check_expression(expr.right)
+
+        # 연산자 호환성 검증
+        op = expr.op
+        if op in ["+", "-", "*", "/", "%"]:
+            if not self.is_numeric(left_type) or not self.is_numeric(right_type):
+                self.errors.append(
+                    TypeError(f"Operator {op} requires numeric operands", expr.line, expr.column)
+                )
+        elif op in ["and", "or"]:
+            if not self.is_type_compatible(left_type, "bool"):
+                self.errors.append(
+                    TypeError(f"Operator {op} left operand must be bool", expr.line, expr.column)
+                )
+        elif op in ["<", ">", "<=", ">=", "==", "!="]:
+            # 비교 연산자는 모든 타입 지원
+            pass
+        elif op in ["|", "&", "^", "<<", ">>"]:
+            if not self.is_integer(left_type) or not self.is_integer(right_type):
+                self.errors.append(
+                    TypeError(f"Bitwise operator {op} requires integers", expr.line, expr.column)
+                )
+
+        return expr
+
+    def check_unary_op(self, expr: UnaryOp) -> UnaryOp:
+        """단항 연산 검증"""
+        operand_type = self.infer_type(expr.operand)
+        expr.operand = self.check_expression(expr.operand)
+
+        op = expr.op
+        if op == "not":
+            if not self.is_type_compatible(operand_type, "bool"):
+                self.errors.append(
+                    TypeError(f"Operator {op} requires bool operand", expr.line, expr.column)
+                )
+        elif op in ["-", "+"]:
+            if not self.is_numeric(operand_type):
+                self.errors.append(
+                    TypeError(f"Operator {op} requires numeric operand", expr.line, expr.column)
+                )
+        elif op == "~":
+            if not self.is_integer(operand_type):
+                self.errors.append(
+                    TypeError(f"Operator {op} requires integer operand", expr.line, expr.column)
+                )
+
+        return expr
+
+    def check_call_expression(self, expr: CallExpression) -> CallExpression:
+        """함수 호출 검증"""
+        expr.func = self.check_expression(expr.func)
+
+        checked_args = []
+        for arg in expr.args:
+            checked = self.check_expression(arg)
+            if checked is not None:
+                checked_args.append(checked)
+        expr.args = checked_args
+
+        return expr
+
+    def check_index_expression(self, expr: IndexExpression) -> IndexExpression:
+        """인덱싱 검증"""
+        obj_type = self.infer_type(expr.obj)
+        index_type = self.infer_type(expr.index)
+
+        if not self.is_indexable(obj_type):
+            self.errors.append(
+                TypeError(f"Object is not indexable", expr.line, expr.column)
+            )
+
+        expr.obj = self.check_expression(expr.obj)
+        expr.index = self.check_expression(expr.index)
+
+        return expr
+
+    def check_attribute_expression(self, expr: AttributeExpression) -> AttributeExpression:
+        """속성 접근 검증"""
+        expr.obj = self.check_expression(expr.obj)
+        return expr
+
+    def infer_type(self, expr: Expression) -> Type:
+        """표현식의 타입 추론"""
+        if expr is None:
+            return PrimitiveType("none")
+
+        if isinstance(expr, IntLiteral):
+            return PrimitiveType("int")
+        elif isinstance(expr, FloatLiteral):
+            return PrimitiveType("float")
+        elif isinstance(expr, StringLiteral):
+            return PrimitiveType("str")
+        elif isinstance(expr, BoolLiteral):
+            return PrimitiveType("bool")
+        elif isinstance(expr, ListLiteral):
+            return PrimitiveType("list")
+        elif isinstance(expr, DictLiteral):
+            return PrimitiveType("dict")
+        elif isinstance(expr, Identifier):
+            if self.current_scope.is_defined(expr.name):
+                return self.current_scope.lookup(expr.name)
+            return PrimitiveType("any")
+        elif isinstance(expr, BinaryOp):
+            left_type = self.infer_type(expr.left)
+            right_type = self.infer_type(expr.right)
+
+            op = expr.op
+            if op in ["+", "-", "*", "/", "**"]:
+                if self.is_float(left_type) or self.is_float(right_type):
+                    return PrimitiveType("float")
+                return PrimitiveType("int")
+            elif op in ["<", ">", "<=", ">=", "==", "!="]:
+                return PrimitiveType("bool")
+            elif op in ["and", "or"]:
+                return PrimitiveType("bool")
+            else:
+                return PrimitiveType("any")
+        elif isinstance(expr, UnaryOp):
+            operand_type = self.infer_type(expr.operand)
+            op = expr.op
+            if op == "not":
+                return PrimitiveType("bool")
+            elif op in ["-", "+"]:
+                return operand_type
+            else:
+                return PrimitiveType("any")
+        elif isinstance(expr, CallExpression):
+            return PrimitiveType("any")
+        elif isinstance(expr, IndexExpression):
+            return PrimitiveType("any")
+        elif isinstance(expr, AttributeExpression):
+            return PrimitiveType("any")
+        else:
+            return PrimitiveType("any")
+
+    def is_type_compatible(self, actual: Type, expected) -> bool:
+        """타입 호환성 검증"""
+        if actual is None:
+            return True
+
+        if isinstance(expected, str):
+            expected_type = PrimitiveType(expected)
+        else:
+            expected_type = expected
+
+        if expected_type.name == "any":
+            return True
+
+        return actual.name == expected_type.name
+
+    def is_numeric(self, type_obj: Type) -> bool:
+        """숫자 타입 확인"""
+        return type_obj.name in ["int", "float"]
+
+    def is_integer(self, type_obj: Type) -> bool:
+        """정수 타입 확인"""
+        return type_obj.name == "int"
+
+    def is_float(self, type_obj: Type) -> bool:
+        """부동소수점 타입 확인"""
+        return type_obj.name == "float"
+
+    def is_iterable(self, type_obj: Type) -> bool:
+        """반복 가능 타입 확인"""
+        return type_obj.name in ["list", "dict", "str", "any"]
+
+    def is_indexable(self, type_obj: Type) -> bool:
+        """인덱싱 가능 타입 확인"""
+        return type_obj.name in ["list", "dict", "str", "any"]
+
+
+def check_types(ast: list[Statement]) -> list[Statement]:
+    """AST 타입 검증 메인 함수"""
+    checker = TypeChecker()
+    return checker.check(ast)

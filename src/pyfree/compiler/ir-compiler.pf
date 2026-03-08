@@ -1,0 +1,470 @@
+# PyFree Compiler: IR Compiler
+# AST를 중간 코드(Intermediate Representation)로 변환
+
+from types import (
+    Token, Expression, Statement, ASTNode,
+    IntLiteral, FloatLiteral, StringLiteral, BoolLiteral,
+    ListLiteral, DictLiteral, Identifier,
+    BinaryOp, UnaryOp, CallExpression, IndexExpression,
+    AttributeExpression, AssignmentStatement,
+    FunctionDef, ClassDef, IfStatement,
+    ForStatement, WhileStatement, ReturnStatement,
+    BreakStatement, ContinueStatement, ExpressionStatement,
+    Type, PrimitiveType, Instruction
+)
+
+
+class IRCompiler:
+    """AST를 중간 코드(IR)로 변환"""
+
+    def __init__(self):
+        self.instructions = []
+        self.registers = {}
+        self.register_count = 0
+        self.label_counter = 0
+        self.loop_stack = []
+        self.function_stack = []
+        self.variable_offsets = {}
+        self.current_offset = 0
+
+    # ============================================
+    # Main Compilation Methods
+    # ============================================
+
+    def compile(self, statements: list[Statement]) -> list[Instruction]:
+        """AST를 IR로 컴파일"""
+        self.instructions = []
+        self.register_count = 0
+        self.label_counter = 0
+
+        for stmt in statements:
+            if stmt is not None:
+                self.compile_statement(stmt)
+
+        return self.instructions
+
+    def compile_statement(self, stmt: Statement) -> None:
+        """문장 컴파일"""
+        if stmt is None:
+            return
+
+        if isinstance(stmt, FunctionDef):
+            self.compile_function_def(stmt)
+        elif isinstance(stmt, ClassDef):
+            self.compile_class_def(stmt)
+        elif isinstance(stmt, IfStatement):
+            self.compile_if_statement(stmt)
+        elif isinstance(stmt, ForStatement):
+            self.compile_for_statement(stmt)
+        elif isinstance(stmt, WhileStatement):
+            self.compile_while_statement(stmt)
+        elif isinstance(stmt, ReturnStatement):
+            self.compile_return_statement(stmt)
+        elif isinstance(stmt, AssignmentStatement):
+            self.compile_assignment_statement(stmt)
+        elif isinstance(stmt, ExpressionStatement):
+            if stmt.expression is not None:
+                self.compile_expression(stmt.expression)
+        elif isinstance(stmt, BreakStatement):
+            self.compile_break_statement(stmt)
+        elif isinstance(stmt, ContinueStatement):
+            self.compile_continue_statement(stmt)
+
+    # ============================================
+    # Statement Compilation
+    # ============================================
+
+    def compile_function_def(self, func: FunctionDef) -> None:
+        """함수 정의 컴파일"""
+        # 함수 시작 레이블
+        start_label = self.create_label()
+        self.emit("LABEL", [start_label])
+
+        # 함수 이름과 레이블 연결
+        self.emit("DEFINE_FUNCTION", [self.get_string_constant(func.name), start_label])
+
+        # 함수 본문 컴파일
+        self.function_stack.append(func.name)
+        for stmt in func.body:
+            if stmt is not None:
+                self.compile_statement(stmt)
+        self.function_stack.pop()
+
+        # 암시적 반환 (함수 끝)
+        if len(self.instructions) == 0 or self.instructions[-1].opcode != "RETURN":
+            self.emit("LOAD_CONST", [self.get_constant("none")])
+            self.emit("RETURN", [])
+
+    def compile_class_def(self, cls: ClassDef) -> None:
+        """클래스 정의 컴파일"""
+        self.emit("DEFINE_CLASS", [self.get_string_constant(cls.name), self.get_string_constant(cls.base_class)])
+
+        # 메서드 컴파일
+        for method in cls.methods:
+            if isinstance(method, FunctionDef):
+                self.compile_function_def(method)
+
+        # 클래스 본문 컴파일
+        for stmt in cls.body:
+            if stmt is not None:
+                self.compile_statement(stmt)
+
+    def compile_if_statement(self, stmt: IfStatement) -> None:
+        """if 문 컴파일"""
+        # 조건 평가
+        condition_reg = self.compile_expression(stmt.condition)
+
+        # 조건부 점프
+        else_label = self.create_label()
+        endif_label = self.create_label()
+
+        self.emit("JUMP_IF_FALSE", [condition_reg, else_label])
+
+        # then 블록
+        for s in stmt.then_body:
+            if s is not None:
+                self.compile_statement(s)
+
+        self.emit("JUMP", [endif_label])
+
+        # else 블록
+        self.emit("LABEL", [else_label])
+        for s in stmt.else_body:
+            if s is not None:
+                self.compile_statement(s)
+
+        # endif 레이블
+        self.emit("LABEL", [endif_label])
+
+    def compile_for_statement(self, stmt: ForStatement) -> None:
+        """for 루프 컴파일"""
+        # 반복자 컴파일
+        iter_reg = self.compile_expression(stmt.iter_expr)
+
+        # 루프 변수 초기화
+        self.register_variable(stmt.target)
+
+        # 루프 시작 레이블
+        loop_label = self.create_label()
+        end_label = self.create_label()
+
+        self.loop_stack.append({"break": end_label, "continue": loop_label})
+
+        self.emit("LABEL", [loop_label])
+
+        # 반복자에서 다음 요소 가져오기
+        elem_reg = self.allocate_register()
+        self.emit("FOR_ITER", [iter_reg, elem_reg, end_label])
+
+        # 루프 변수에 할당
+        self.emit("STORE_VAR", [self.get_variable_offset(stmt.target), elem_reg])
+
+        # 루프 본문
+        for s in stmt.body:
+            if s is not None:
+                self.compile_statement(s)
+
+        # 루프 끝으로 점프
+        self.emit("JUMP", [loop_label])
+
+        # 루프 끝 레이블
+        self.emit("LABEL", [end_label])
+
+        self.loop_stack.pop()
+
+    def compile_while_statement(self, stmt: WhileStatement) -> None:
+        """while 루프 컴파일"""
+        loop_label = self.create_label()
+        end_label = self.create_label()
+
+        self.loop_stack.append({"break": end_label, "continue": loop_label})
+
+        self.emit("LABEL", [loop_label])
+
+        # 조건 평가
+        condition_reg = self.compile_expression(stmt.condition)
+
+        # 조건부 점프
+        self.emit("JUMP_IF_FALSE", [condition_reg, end_label])
+
+        # 루프 본문
+        for s in stmt.body:
+            if s is not None:
+                self.compile_statement(s)
+
+        # 루프 시작으로 점프
+        self.emit("JUMP", [loop_label])
+
+        # 루프 끝 레이블
+        self.emit("LABEL", [end_label])
+
+        self.loop_stack.pop()
+
+    def compile_return_statement(self, stmt: ReturnStatement) -> None:
+        """반환 문 컴파일"""
+        if stmt.value is None:
+            self.emit("LOAD_CONST", [self.get_constant("none")])
+        else:
+            self.compile_expression(stmt.value)
+
+        self.emit("RETURN", [])
+
+    def compile_assignment_statement(self, stmt: AssignmentStatement) -> None:
+        """할당 문 컴파일"""
+        # 우변 표현식 컴파일
+        value_reg = self.compile_expression(stmt.value)
+
+        # 변수에 저장
+        if stmt.target not in self.variable_offsets:
+            self.register_variable(stmt.target)
+
+        offset = self.get_variable_offset(stmt.target)
+        self.emit("STORE_VAR", [offset, value_reg])
+
+    def compile_break_statement(self, stmt: BreakStatement) -> None:
+        """break 문 컴파일"""
+        if len(self.loop_stack) > 0:
+            break_label = self.loop_stack[-1]["break"]
+            self.emit("JUMP", [break_label])
+
+    def compile_continue_statement(self, stmt: ContinueStatement) -> None:
+        """continue 문 컴파일"""
+        if len(self.loop_stack) > 0:
+            continue_label = self.loop_stack[-1]["continue"]
+            self.emit("JUMP", [continue_label])
+
+    # ============================================
+    # Expression Compilation
+    # ============================================
+
+    def compile_expression(self, expr: Expression) -> int:
+        """표현식 컴파일 (레지스터 번호 반환)"""
+        if expr is None:
+            reg = self.allocate_register()
+            self.emit("LOAD_CONST", [self.get_constant("none")])
+            return reg
+
+        if isinstance(expr, IntLiteral):
+            reg = self.allocate_register()
+            self.emit("LOAD_CONST", [self.get_constant(expr.value)])
+            return reg
+
+        elif isinstance(expr, FloatLiteral):
+            reg = self.allocate_register()
+            self.emit("LOAD_CONST", [self.get_constant(expr.value)])
+            return reg
+
+        elif isinstance(expr, StringLiteral):
+            reg = self.allocate_register()
+            self.emit("LOAD_CONST", [self.get_string_constant(expr.value)])
+            return reg
+
+        elif isinstance(expr, BoolLiteral):
+            reg = self.allocate_register()
+            self.emit("LOAD_CONST", [self.get_constant(expr.value)])
+            return reg
+
+        elif isinstance(expr, ListLiteral):
+            return self.compile_list_literal(expr)
+
+        elif isinstance(expr, DictLiteral):
+            return self.compile_dict_literal(expr)
+
+        elif isinstance(expr, Identifier):
+            return self.compile_identifier(expr)
+
+        elif isinstance(expr, BinaryOp):
+            return self.compile_binary_op(expr)
+
+        elif isinstance(expr, UnaryOp):
+            return self.compile_unary_op(expr)
+
+        elif isinstance(expr, CallExpression):
+            return self.compile_call_expression(expr)
+
+        elif isinstance(expr, IndexExpression):
+            return self.compile_index_expression(expr)
+
+        elif isinstance(expr, AttributeExpression):
+            return self.compile_attribute_expression(expr)
+
+        else:
+            reg = self.allocate_register()
+            return reg
+
+    def compile_list_literal(self, expr: ListLiteral) -> int:
+        """리스트 리터럴 컴파일"""
+        reg = self.allocate_register()
+        self.emit("BUILD_LIST", [len(expr.elements)])
+
+        for elem in expr.elements:
+            elem_reg = self.compile_expression(elem)
+            self.emit("LIST_APPEND", [reg, elem_reg])
+
+        return reg
+
+    def compile_dict_literal(self, expr: DictLiteral) -> int:
+        """딕셔너리 리터럴 컴파일"""
+        reg = self.allocate_register()
+        self.emit("BUILD_DICT", [len(expr.keys)])
+
+        for key, value in zip(expr.keys, expr.values):
+            key_reg = self.compile_expression(key)
+            value_reg = self.compile_expression(value)
+            self.emit("DICT_SET", [reg, key_reg, value_reg])
+
+        return reg
+
+    def compile_identifier(self, expr: Identifier) -> int:
+        """식별자 컴파일"""
+        reg = self.allocate_register()
+
+        if expr.name in self.variable_offsets:
+            offset = self.get_variable_offset(expr.name)
+            self.emit("LOAD_VAR", [offset])
+        else:
+            self.emit("LOAD_GLOBAL", [self.get_string_constant(expr.name)])
+
+        return reg
+
+    def compile_binary_op(self, expr: BinaryOp) -> int:
+        """이항 연산 컴파일"""
+        left_reg = self.compile_expression(expr.left)
+        right_reg = self.compile_expression(expr.right)
+        result_reg = self.allocate_register()
+
+        op_map = {
+            "+": "ADD",
+            "-": "SUB",
+            "*": "MUL",
+            "/": "DIV",
+            "%": "MOD",
+            "**": "POW",
+            "==": "EQ",
+            "!=": "NE",
+            "<": "LT",
+            ">": "GT",
+            "<=": "LE",
+            ">=": "GE",
+            "and": "AND",
+            "or": "OR",
+            "&": "BITAND",
+            "|": "BITOR",
+            "^": "BITXOR",
+            "<<": "LSHIFT",
+            ">>": "RSHIFT",
+        }
+
+        if expr.op in op_map:
+            opcode = op_map[expr.op]
+            self.emit(opcode, [left_reg, right_reg])
+
+        return result_reg
+
+    def compile_unary_op(self, expr: UnaryOp) -> int:
+        """단항 연산 컴파일"""
+        operand_reg = self.compile_expression(expr.operand)
+        result_reg = self.allocate_register()
+
+        op_map = {
+            "-": "NEG",
+            "+": "POS",
+            "not": "NOT",
+            "~": "BITNOT",
+        }
+
+        if expr.op in op_map:
+            opcode = op_map[expr.op]
+            self.emit(opcode, [operand_reg])
+
+        return result_reg
+
+    def compile_call_expression(self, expr: CallExpression) -> int:
+        """함수 호출 컴파일"""
+        # 함수 객체 컴파일
+        func_reg = self.compile_expression(expr.func)
+
+        # 인자 컴파일
+        arg_regs = []
+        for arg in expr.args:
+            arg_reg = self.compile_expression(arg)
+            arg_regs.append(arg_reg)
+
+        # 함수 호출
+        result_reg = self.allocate_register()
+        self.emit("CALL", [func_reg, len(arg_regs)])
+
+        return result_reg
+
+    def compile_index_expression(self, expr: IndexExpression) -> int:
+        """인덱싱 컴파일"""
+        obj_reg = self.compile_expression(expr.obj)
+        index_reg = self.compile_expression(expr.index)
+        result_reg = self.allocate_register()
+
+        self.emit("GET_ITEM", [obj_reg, index_reg])
+
+        return result_reg
+
+    def compile_attribute_expression(self, expr: AttributeExpression) -> int:
+        """속성 접근 컴파일"""
+        obj_reg = self.compile_expression(expr.obj)
+        result_reg = self.allocate_register()
+
+        self.emit("GET_ATTR", [obj_reg, self.get_string_constant(expr.name)])
+
+        return result_reg
+
+    # ============================================
+    # Helper Methods
+    # ============================================
+
+    def emit(self, opcode: str, args: list) -> None:
+        """IR 명령어 방출"""
+        instr = Instruction(opcode, args, 0, 0)
+        self.instructions.append(instr)
+
+    def allocate_register(self) -> int:
+        """레지스터 할당"""
+        reg = self.register_count
+        self.register_count = self.register_count + 1
+        return reg
+
+    def register_variable(self, name: str) -> None:
+        """변수 등록"""
+        if name not in self.variable_offsets:
+            self.variable_offsets[name] = self.current_offset
+            self.current_offset = self.current_offset + 1
+
+    def get_variable_offset(self, name: str) -> int:
+        """변수 오프셋 조회"""
+        if name in self.variable_offsets:
+            return self.variable_offsets[name]
+        return -1
+
+    def create_label(self) -> int:
+        """새로운 레이블 생성"""
+        label = self.label_counter
+        self.label_counter = self.label_counter + 1
+        return label
+
+    def get_constant(self, value) -> int:
+        """상수 인덱스 조회"""
+        # 상수를 상수 풀에 추가하고 인덱스 반환
+        # 여기서는 단순히 값 반환 (실제로는 상수 테이블 관리 필요)
+        return value
+
+    def get_string_constant(self, value: str) -> int:
+        """문자열 상수 인덱스 조회"""
+        # 문자열을 상수 풀에 추가하고 인덱스 반환
+        # 여기서는 단순히 해시 값 반환 (실제로는 상수 테이블 관리 필요)
+        hash_val = 0
+        for c in value:
+            hash_val = (hash_val * 31 + ord(c)) % 2147483647
+        return hash_val
+
+
+def compile_to_ir(ast: list[Statement]) -> list[Instruction]:
+    """AST를 IR로 컴파일하는 메인 함수"""
+    compiler = IRCompiler()
+    return compiler.compile(ast)
