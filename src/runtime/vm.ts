@@ -240,7 +240,12 @@ export class VM {
 
       // 함수
       case Opcode.CALL:
-        this.callFunction(frame, aNum, bNum, cNum);
+        // ✅ 버그 수정 (2026-03-09): CALL 형식 = [resultReg, funcReg, argCount, arg1, arg2, ...]
+        const resultReg = aNum;
+        const funcReg = bNum;
+        const argCount = cNum;
+        const argRegs = instr.args.slice(3, 3 + argCount) as number[];
+        this.callFunctionNew(frame, resultReg, funcReg, argRegs);
         break;
 
       case Opcode.RETURN:
@@ -349,6 +354,53 @@ export class VM {
       // 파라미터 전달
       for (let i = 0; i < argCount && i < func.paramCount; i++) {
         newFrame.locals.set(func.paramNames[i], frame.registers[dst + 1 + i]);
+      }
+
+      this.frameStack.push(newFrame);
+    }
+  }
+
+  /**
+   * ✅ 새로운 함수 호출 (2026-03-09)
+   * 인자를 레지스터 번호로 직접 받음
+   */
+  private callFunctionNew(
+    frame: Frame,
+    resultReg: number,
+    funcReg: number,
+    argRegs: number[]
+  ): void {
+    const func = frame.registers[funcReg];
+
+    // 인자 값들을 레지스터에서 추출
+    const argValues: PyFreeValue[] = [];
+    for (const argReg of argRegs) {
+      argValues.push(frame.registers[argReg]);
+    }
+
+    // 네이티브 함수 (print, len, range 등)
+    if (typeof func === 'function') {
+      try {
+        frame.registers[resultReg] = func(...argValues);
+      } catch (e) {
+        throw new Error(`함수 호출 오류: ${e}`);
+      }
+      return;
+    }
+
+    // IR 함수
+    if (typeof func === 'object' && func.code) {
+      const newFrame: Frame = {
+        function: func,
+        code: func.code,
+        pc: 0,
+        registers: new Array(256),
+        locals: new Map(),
+      };
+
+      // 파라미터 전달
+      for (let i = 0; i < argValues.length && i < func.paramCount; i++) {
+        newFrame.locals.set(func.paramNames[i], argValues[i]);
       }
 
       this.frameStack.push(newFrame);

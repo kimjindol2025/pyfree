@@ -1050,8 +1050,10 @@ export class IRCompiler {
     // 버그 수정 (2026-03-08): 함수 호출 인자를 전용 영역에 배치
     // 이전: resultReg + 1 + i 위치에 배치 (겹칠 수 있음)
     // 수정: allocCallArgRegister()로 전용 영역(200+) 사용
+    const argRegs: number[] = [];
     for (let i = 0; i < args.length; i++) {
       const argReg = this.allocCallArgRegister(i); // 전용 영역 사용
+      argRegs.push(argReg);
       const arg = args[i];
       const actualArg = arg.value || arg;
 
@@ -1081,9 +1083,10 @@ export class IRCompiler {
       }
     }
 
-    // CALL: r[resultReg] = call(r[funcReg], argCount)
-    // VM은 인자를 r[200], r[201], ... 에서 찾음
-    this.builder.emit(Opcode.CALL, [resultReg, funcReg, args.length]);
+    // ✅ 버그 수정 (2026-03-09): CALL 형식 = [resultReg, funcReg, argCount, arg1, arg2, ...]
+    // 이전: CALL만 인자 레지스터를 전달하지 않았음
+    // 수정: argRegs를 CALL 명령어에 포함
+    this.builder.emit(Opcode.CALL, [resultReg, funcReg, args.length, ...argRegs]);
     this.freeRegister(funcReg);
 
     return resultReg;
