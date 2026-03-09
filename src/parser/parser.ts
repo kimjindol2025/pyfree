@@ -185,15 +185,24 @@ export class PyFreeParser {
       } as AST.AssignmentStatement;
 
       if (isExport) stmt.isExport = true;
+
+      // 줄 끝의 NEWLINE 처리
+      this.match(TokenType.NEWLINE);
+
       return stmt;
     }
 
-    return {
+    const exprStmt = {
       type: 'ExpressionStatement',
       expression: expr,
       line: expr.line,
       column: expr.column,
     } as AST.ExpressionStatement;
+
+    // 줄 끝의 NEWLINE 처리
+    this.match(TokenType.NEWLINE);
+
+    return exprStmt;
   }
 
   /**
