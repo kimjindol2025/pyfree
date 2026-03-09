@@ -826,10 +826,23 @@ export class PyFreeParser {
     // 리터럴
     if (this.check(TokenType.NUMBER)) {
       const value = this.advance();
+      // 숫자 문자열을 숫자로 변환
+      let numValue: number;
+      if (typeof value.value === 'string') {
+        if (value.value.startsWith('0x')) {
+          numValue = parseInt(value.value, 16);
+        } else if (value.value.startsWith('0b')) {
+          numValue = parseInt(value.value.slice(2), 2);
+        } else {
+          numValue = parseFloat(value.value);
+        }
+      } else {
+        numValue = value.value;
+      }
       return {
         type: 'Literal',
         valueType: 'number',
-        value: value.value,
+        value: numValue,
         line: value.line,
         column: value.column,
       } as AST.Literal;

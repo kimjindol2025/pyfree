@@ -835,8 +835,6 @@ export class IRCompiler {
    * 표현식 컴파일 (레지스터에 값 생성)
    */
   private compileExpression(expr: any): number {
-    const resultReg = this.allocRegister();
-
     switch (expr.type) {
       case 'Literal':
         return this.compileLiteral(expr);
@@ -888,6 +886,7 @@ export class IRCompiler {
 
       default:
         // 알 수 없는 표현식은 None 반환
+        const resultReg = this.allocRegister();
         this.builder.emit(Opcode.LOAD_NONE, [resultReg]);
         return resultReg;
     }
@@ -946,7 +945,7 @@ export class IRCompiler {
     const resultReg = this.allocRegister();
     const leftReg = this.compileExpression(expr.left);
     const rightReg = this.compileExpression(expr.right);
-    const op = expr.op;
+    const op = expr.operator || expr.op;  // AST에서는 "operator", IR에서는 "op" 사용
 
     switch (op) {
       case '+':
@@ -1047,44 +1046,28 @@ export class IRCompiler {
     const funcReg = this.compileExpression(funcNode);
     const args = expr.args || [];
 
-    // 버그 수정 (2026-03-08): 함수 호출 인자를 전용 영역에 배치
-    // 이전: resultReg + 1 + i 위치에 배치 (겹칠 수 있음)
-    // 수정: allocCallArgRegister()로 전용 영역(200+) 사용
+    // 함수 호출 인자 컴파일 (각 인자는 순차적 레지스터에 배치)
+    const argRegs: number[] = [];
     for (let i = 0; i < args.length; i++) {
-      const argReg = this.allocCallArgRegister(i); // 전용 영역 사용
       const arg = args[i];
+      // Parser에서 arg.value 형태로 감싸질 수 있으므로 언래핑
       const actualArg = arg.value || arg;
 
-      // 인자를 컴파일하여 결과를 argReg에 직접 로드
-      if (actualArg.type === 'Literal') {
-        const constIdx = this.builder.addConstant(actualArg.value);
-        this.builder.emit(Opcode.LOAD_CONST, [argReg, constIdx]);
-      } else if (actualArg.type === 'Identifier') {
-        const symbol = this.lookupSymbol(actualArg.name);
-        if (symbol && !symbol.isGlobal && symbol.register !== undefined) {
-          this.builder.emit(Opcode.LOAD_FAST, [argReg, symbol.register]);
-        } else if (symbol && symbol.isGlobal && symbol.index !== undefined) {
-          this.builder.emit(Opcode.LOAD_GLOBAL, [argReg, symbol.index]);
-        } else {
-          this.builder.emit(Opcode.LOAD_NONE, [argReg]);
-        }
-      } else {
-        // 더 복잡한 표현식은 임시 레지스터에서 복사
-        const tempReg = this.compileExpression(actualArg);
-        // 값을 복사 (ADD를 사용한 트릭)
-        const zeroIdx = this.builder.addConstant(0);
-        const zeroReg = this.allocRegister();
-        this.builder.emit(Opcode.LOAD_CONST, [zeroReg, zeroIdx]);
-        this.builder.emit(Opcode.ADD, [argReg, tempReg, zeroReg]);
-        this.freeRegister(tempReg);
-        this.freeRegister(zeroReg);
-      }
+      // 각 인자를 컴파일하면 레지스터에 결과가 저장됨
+      const argReg = this.compileExpression(actualArg);
+      argRegs.push(argReg);
     }
 
-    // CALL: r[resultReg] = call(r[funcReg], argCount)
-    // VM은 인자를 r[200], r[201], ... 에서 찾음
-    this.builder.emit(Opcode.CALL, [resultReg, funcReg, args.length]);
+    // CALL 명령어: r[resultReg] = call(r[funcReg], argCount, arg1, arg2, ...)
+    // CALL 명령어는 인자 레지스터들을 직접 포함할 수 있음
+    const callArgs: (number | string)[] = [resultReg, funcReg, args.length, ...argRegs];
+    this.builder.emit(Opcode.CALL, callArgs);
+
+    // 사용한 레지스터 해제
     this.freeRegister(funcReg);
+    for (const argReg of argRegs) {
+      this.freeRegister(argReg);
+    }
 
     return resultReg;
   }

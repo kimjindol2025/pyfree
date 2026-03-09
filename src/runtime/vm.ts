@@ -240,7 +240,10 @@ export class VM {
 
       // 함수
       case Opcode.CALL:
-        this.callFunction(frame, aNum, bNum, cNum);
+        // CALL [dst, func, argc, arg1, arg2, ...]
+        // 새로운 형식: 인자 레지스터들을 직접 전달
+        const callArgRegs = instr.args.length > 3 ? instr.args.slice(3) : undefined;
+        this.callFunction(frame, aNum, bNum, cNum, callArgRegs as (number | string)[] | undefined);
         break;
 
       case Opcode.RETURN:
@@ -317,15 +320,26 @@ export class VM {
     frame: Frame,
     dst: number,
     funcIdx: number,
-    argCount: number
+    argCount: number,
+    argRegs?: (number | string)[]
   ): void {
     const func = frame.registers[funcIdx];
 
     // 네이티브 함수 (print, len, range 등)
     if (typeof func === 'function') {
       const args: PyFreeValue[] = [];
-      for (let i = 0; i < argCount; i++) {
-        args.push(frame.registers[dst + 1 + i]);
+
+      // 새로운 형식: 인자 레지스터들을 직접 받음
+      if (argRegs && argRegs.length > 0) {
+        for (const argReg of argRegs) {
+          const reg = typeof argReg === 'number' ? argReg : parseInt(argReg as string);
+          args.push(frame.registers[reg]);
+        }
+      } else {
+        // 이전 형식: r[dst+1]부터 순차적으로
+        for (let i = 0; i < argCount; i++) {
+          args.push(frame.registers[dst + 1 + i]);
+        }
       }
 
       try {
@@ -347,8 +361,18 @@ export class VM {
       };
 
       // 파라미터 전달
-      for (let i = 0; i < argCount && i < func.paramCount; i++) {
-        newFrame.locals.set(func.paramNames[i], frame.registers[dst + 1 + i]);
+      if (argRegs && argRegs.length > 0) {
+        // 새로운 형식
+        for (let i = 0; i < argCount && i < func.paramCount; i++) {
+          const argReg = argRegs[i];
+          const reg = typeof argReg === 'number' ? argReg : parseInt(argReg as string);
+          newFrame.locals.set(func.paramNames[i], frame.registers[reg]);
+        }
+      } else {
+        // 이전 형식
+        for (let i = 0; i < argCount && i < func.paramCount; i++) {
+          newFrame.locals.set(func.paramNames[i], frame.registers[dst + 1 + i]);
+        }
       }
 
       this.frameStack.push(newFrame);
