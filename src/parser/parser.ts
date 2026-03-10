@@ -673,18 +673,24 @@ export class PyFreeParser {
 
   private parseLogicalOr(): AST.Expression {
     let expr = this.parseLogicalAnd();
+    const values: AST.Expression[] = [expr];
+    const startLine = expr.line;
+    const startColumn = expr.column;
 
     while (this.check(TokenType.OR)) {
-      const operator = this.advance().value;
+      this.advance();
       const right = this.parseLogicalAnd();
-      expr = {
-        type: 'BinaryOp',
-        left: expr,
-        operator,
-        right,
-        line: expr.line,
-        column: expr.column,
-      } as AST.BinaryOp;
+      values.push(right);
+    }
+
+    if (values.length > 1) {
+      return {
+        type: 'BoolOp',
+        op: 'or',
+        values,
+        line: startLine,
+        column: startColumn,
+      } as AST.BoolOp;
     }
 
     return expr;
@@ -692,18 +698,24 @@ export class PyFreeParser {
 
   private parseLogicalAnd(): AST.Expression {
     let expr = this.parseLogicalNot();
+    const values: AST.Expression[] = [expr];
+    const startLine = expr.line;
+    const startColumn = expr.column;
 
     while (this.check(TokenType.AND)) {
-      const operator = this.advance().value;
+      this.advance();
       const right = this.parseLogicalNot();
-      expr = {
-        type: 'BinaryOp',
-        left: expr,
-        operator,
-        right,
-        line: expr.line,
-        column: expr.column,
-      } as AST.BinaryOp;
+      values.push(right);
+    }
+
+    if (values.length > 1) {
+      return {
+        type: 'BoolOp',
+        op: 'and',
+        values,
+        line: startLine,
+        column: startColumn,
+      } as AST.BoolOp;
     }
 
     return expr;

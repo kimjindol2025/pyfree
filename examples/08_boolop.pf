@@ -1,0 +1,43 @@
+# BoolOp 테스트: and, or 연산자
+# Phase 10 Step 4b: 불린 연산 구현
+
+# 기본 and 테스트
+x = True and False
+print(x)           # False
+
+# 기본 or 테스트
+y = False or True
+print(y)           # True
+
+# 연쇄 and 테스트
+z = True and True and False
+print(z)           # False
+
+# 연쇄 or 테스트
+w = False or False or True
+print(w)           # True
+
+# 숫자와 and 테스트 (0은 false, non-zero는 true)
+a = 5 and 3
+print(a)           # 3 (마지막 값)
+
+b = 0 and 7
+print(b)           # 0 (첫 false 값)
+
+# 숫자와 or 테스트
+c = 0 or 5
+print(c)           # 5 (첫 true 값)
+
+d = 3 or 0
+print(d)           # 3 (첫 true 값)
+
+# 복합 테스트
+result1 = True and (5 > 3)
+print(result1)     # True
+
+result2 = False or (2 < 1)
+print(result2)     # False
+
+# 우선순위 테스트: and > or
+result3 = True or False and False
+print(result3)     # True (and가 먼저 계산되므로: True or (False and False) = True or False = True)

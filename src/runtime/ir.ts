@@ -943,6 +943,9 @@ export class IRCompiler {
       case 'BinaryOp':
         return this.compileBinaryOp(expr);
 
+      case 'BoolOp':
+        return this.compileBoolOp(expr);
+
       case 'UnaryOp':
         return this.compileUnaryOp(expr);
 
@@ -997,7 +1000,7 @@ export class IRCompiler {
     let value = expr.value;
 
     // ✅ Phase 9: 렉서가 숫자를 문자열로 저장하므로 타입에 따라 변환
-    if (expr.valueType === 'number') {
+    if (expr.valueType === 'number' && typeof value === 'string') {
       // 16진수, 8진수, 2진수 처리
       if (value.startsWith('0x')) {
         value = parseInt(value, 16);
@@ -1050,6 +1053,46 @@ export class IRCompiler {
     }
 
     return resultReg;
+  }
+
+  /**
+   * 불린 연산 컴파일 (BoolOp: and, or)
+   * 단락 평가를 지원합니다.
+   */
+  private compileBoolOp(expr: any): number {
+    const op = expr.op; // 'and' 또는 'or'
+    const values = expr.values || [];
+
+    if (values.length === 0) {
+      const resultReg = this.allocRegister();
+      this.builder.emit(Opcode.LOAD_NONE, [resultReg]);
+      return resultReg;
+    }
+
+    if (values.length === 1) {
+      // 단일 값이면 그것 반환
+      return this.compileExpression(values[0]);
+    }
+
+    // 여러 값을 처리
+    let leftReg = this.compileExpression(values[0]);
+
+    for (let i = 1; i < values.length; i++) {
+      const rightReg = this.compileExpression(values[i]);
+      const resultReg = this.allocRegister();
+
+      if (op === 'and') {
+        this.builder.emit(Opcode.AND, [resultReg, leftReg, rightReg]);
+      } else { // op === 'or'
+        this.builder.emit(Opcode.OR, [resultReg, leftReg, rightReg]);
+      }
+
+      this.freeRegister(leftReg);
+      this.freeRegister(rightReg);
+      leftReg = resultReg;
+    }
+
+    return leftReg;
   }
 
   /**

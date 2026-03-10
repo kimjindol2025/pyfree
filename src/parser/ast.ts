@@ -296,6 +296,7 @@ export interface WithItem {
 
 export type Expression =
   | BinaryOp
+  | BoolOp
   | UnaryOp
   | FunctionCall
   | ListComprehension
@@ -323,6 +324,17 @@ export interface BinaryOp extends ASTNode {
   left: Expression;
   operator: string;
   right: Expression;
+}
+
+/**
+ * 논리 연산
+ * a and b, a or b, a and b and c, etc
+ * (단락 평가 지원)
+ */
+export interface BoolOp extends ASTNode {
+  type: 'BoolOp';
+  op: 'and' | 'or';
+  values: Expression[];  // [a, b, c] for "a and b and c"
 }
 
 /**
