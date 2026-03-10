@@ -201,22 +201,44 @@ Functions: 1 (fib 함수 정의)
 
 ---
 
+## 📝 파서 버그 수정 (2026-03-10)
+
+### 문제
+예제 04_function.pf의 파서 에러: "예상치 못한 토큰: [object Object]"
+- 원인: 연속된 NEWLINE 토큰 처리 미흡
+- 영향: 두 함수 정의 후 복수 변수 할당 시 발생
+
+### 해결책
+parseStatement에 NEWLINE 토큰 건너뛰기 추가:
+```typescript
+while (this.check(TokenType.NEWLINE) || this.check(TokenType.DEDENT)) {
+  if (this.check(TokenType.DEDENT)) break;
+  this.advance();
+}
+```
+
+### 결과
+✅ 예제 04, 05 모두 파싱 및 실행 성공
+
+---
+
 ## 📝 다음 단계
 
 1. **TOP 2 완료** (배열 변수 루프 최적화)
    - 런타임 이슈 디버깅
    - 6013 → 250 IR 감소 목표
 
-2. **예제 작성**
-   - `examples/04_function.pf` 작성
-   - `examples/05_recursion.pf` 작성
-
-3. **Phase 3 최종화**
+2. **Phase 3 최종화**
    - 모든 기본 기능 검증
    - 예제 통과 확인
+   - 성능 최적화
+
+3. **Phase 4 준비**
+   - 예외 처리 구현
+   - 더 많은 예제 작성
 
 ---
 
 **마감**: 2026-03-17 (1주)
-**현재 완성도**: 55% → **65%** ⬆️
+**현재 완성도**: 65% → **70%** ⬆️
 
