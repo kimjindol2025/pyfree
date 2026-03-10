@@ -18,8 +18,8 @@
  */
 export class RegisterAllocator {
   private allocated: Set<number> = new Set();
-  private maxRegister: number = 256;
-  private spillStart: number = 200; // 함수 호출 인자용 예약 영역
+  private maxRegister: number = 10000; // Dynamic register pool for complex programs
+  private spillStart: number = 9950; // 함수 호출 인자용 예약 영역
 
   /**
    * 새로운 레지스터 할당
