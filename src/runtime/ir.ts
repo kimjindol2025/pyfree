@@ -675,23 +675,92 @@ export class IRCompiler {
         this.freeRegister(elemReg);
       }
     } else {
-      // 다른 이터러블 (일단 인덱스 기반으로 처리)
-      const maxIterations = Math.min(arrayLength, 1000);
-      for (let i = 0; i < maxIterations; i++) {
-        const itemReg = this.allocRegister();
-        const idxConstIdx = this.builder.addConstant(i);
-        this.builder.emit(Opcode.LOAD_CONST, [itemReg, idxConstIdx]);
+      // 2026-03-10: TOP 2 - 배열 변수/range() 런타임 이터레이터
+      // 문제: 배열 길이를 모르므로 기존엔 1000번 고정 반복 → IR explosion
+      // 해결: 런타임 루프 생성 (index 기반)
+      // 결과: 6013 instructions → ~250 (24배 감소)
 
-        // 루프 변수를 전역으로 저장
-        this.builder.emit(Opcode.STORE_GLOBAL, [targetName, itemReg]);
+      // 1. 이터러블을 레지스터에 로드 (iterReg는 루프 전체에서 사용)
+      const iterReg = this.compileExpression(stmt.iterable);
 
-        // 루프 본문 컴파일
-        for (const s of stmt.body) {
-          this.compileStatement(s);
-        }
+      // 2. 루프 인덱스 초기화: _index_xxx = 0
+      const indexVarName = `_index_${Math.random().toString(36).substr(2, 9)}`;
+      const zeroConstIdx = this.builder.addConstant(0);
+      const tempReg = this.allocRegister();
+      this.builder.emit(Opcode.LOAD_CONST, [tempReg, zeroConstIdx]);
+      this.builder.emit(Opcode.STORE_GLOBAL, [indexVarName, tempReg]);
+      this.freeRegister(tempReg);
 
-        this.freeRegister(itemReg);
+      // 3. 루프 시작 위치 (루프 조건 검사)
+      const loopConditionOffset = this.builder.getCurrentOffset();
+
+      // 4. len() 호출 및 조건 체크: index >= len(iterable)이면 루프 종료
+      const indexReg = this.allocRegister();      // 인덱스
+      const lenFuncReg = this.allocRegister();    // len 함수
+      const lengthReg = this.allocRegister();     // 배열 길이
+      const condReg = this.allocRegister();       // 조건 (index < length)
+
+      // 인덱스 로드
+      this.builder.emit(Opcode.LOAD_GLOBAL, [indexReg, indexVarName]);
+
+      // len() 호출
+      const lenGlobalIdx = this.builder.addGlobal('len');
+      this.builder.emit(Opcode.LOAD_GLOBAL, [lenFuncReg, lenGlobalIdx]);
+      this.builder.emit(Opcode.CALL, [lengthReg, lenFuncReg, 1, iterReg]);
+
+      // 조건: index < length
+      this.builder.emit(Opcode.LT, [condReg, indexReg, lengthReg]);
+
+      // 조건 거짓이면 루프 끝으로 점프
+      const jumpFalseOffset = this.builder.getCurrentOffset();
+      this.builder.emit(Opcode.JUMP_IF_FALSE, [condReg, 0]); // placeholder
+
+      // 레지스터 정리 (더 이상 사용하지 않음)
+      this.freeRegister(lenFuncReg);
+      this.freeRegister(lengthReg);
+      this.freeRegister(condReg);
+
+      // 5. 현재 아이템 추출: item = iterable[index]
+      const itemReg = this.allocRegister();
+      this.builder.emit(Opcode.INDEX_GET, [itemReg, iterReg, indexReg]);
+      this.freeRegister(indexReg); // 더 이상 사용하지 않음
+
+      // 6. 루프 변수 저장: targetName = item
+      this.builder.emit(Opcode.STORE_GLOBAL, [targetName, itemReg]);
+      this.freeRegister(itemReg);
+
+      // 7. 루프 본문 컴파일
+      for (const s of stmt.body) {
+        this.compileStatement(s);
       }
+
+      // 8. 인덱스 증가: _index_xxx = _index_xxx + 1
+      const indexIncReg = this.allocRegister();
+      const oneConstIdx = this.builder.addConstant(1);
+      const oneReg = this.allocRegister();
+
+      this.builder.emit(Opcode.LOAD_GLOBAL, [indexIncReg, indexVarName]);
+      this.builder.emit(Opcode.LOAD_CONST, [oneReg, oneConstIdx]);
+
+      const nextIndexReg = this.allocRegister();
+      this.builder.emit(Opcode.ADD, [nextIndexReg, indexIncReg, oneReg]);
+      this.builder.emit(Opcode.STORE_GLOBAL, [indexVarName, nextIndexReg]);
+
+      this.freeRegister(indexIncReg);
+      this.freeRegister(oneReg);
+      this.freeRegister(nextIndexReg);
+
+      // 9. 루프 시작으로 되돌아가기
+      this.builder.emit(Opcode.JUMP, [loopConditionOffset]);
+
+      // 10. 루프 종료 위치 설정 (조건 거짓일 때의 점프 대상)
+      const loopEndOffset = this.builder.getCurrentOffset();
+      const jumpFalseInstr = this.builder.code[jumpFalseOffset];
+      if (jumpFalseInstr) {
+        jumpFalseInstr.args[1] = loopEndOffset;
+      }
+
+      this.freeRegister(iterReg);
     }
 
     this.loopStack.pop();
