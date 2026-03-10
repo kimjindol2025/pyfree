@@ -1,0 +1,28 @@
+# Compare chain 테스트
+# Phase 10 Step 4: Compare chain 구현
+
+# 기본 체인 테스트
+print(1 < 2 < 3)           # True
+print(3 < 2 < 1)           # False
+print(1 < 2 > 0)           # True
+
+# 숫자 비교 체인
+a = 5
+b = 10
+c = 15
+print(a < b < c)           # True
+print(c > b > a)           # True
+print(a < b < a)           # False
+
+# 복합 비교
+print(1 == 1 == 1)         # True
+print(1 == 1 != 2)         # True
+print(5 <= 10 < 20)        # True
+
+# 등호와 부등호 혼합
+print(1 < 2 <= 2)          # True
+print(1 < 2 < 2)           # False
+
+# 거짓 체인
+print(1 > 2 < 3)           # False
+print(5 > 4 > 3)           # True

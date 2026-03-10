@@ -739,21 +739,46 @@ export class PyFreeParser {
 
   private parseComparison(): AST.Expression {
     let expr = this.parseAddition();
+    const startLine = expr.line;
+    const startColumn = expr.column;
+
+    // 비교 연산자가 없으면 단순 표현식 반환
+    if (!this.isComparisonOp()) {
+      return expr;
+    }
+
+    // Compare chain: a < b < c
+    const ops: string[] = [];
+    const comparators: AST.Expression[] = [];
 
     while (this.isComparisonOp()) {
       const operator = this.advance().value;
+      ops.push(operator);
       const right = this.parseAddition();
-      expr = {
+      comparators.push(right);
+    }
+
+    // 비교가 여러 개면 Compare, 하나면 BinaryOp
+    if (ops.length === 1) {
+      return {
         type: 'BinaryOp',
         left: expr,
-        operator,
-        right,
-        line: expr.line,
-        column: expr.column,
+        operator: ops[0],
+        right: comparators[0],
+        line: startLine,
+        column: startColumn,
       } as AST.BinaryOp;
     }
 
-    return expr;
+    // Compare chain
+    return {
+      type: 'Compare',
+      expr,
+      ops,
+      comparators,
+      line: startLine,
+      column: startColumn,
+    } as AST.Compare;
   }
 
   private parseAddition(): AST.Expression {

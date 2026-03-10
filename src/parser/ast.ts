@@ -297,6 +297,7 @@ export interface WithItem {
 export type Expression =
   | BinaryOp
   | BoolOp
+  | Compare
   | UnaryOp
   | FunctionCall
   | ListComprehension
@@ -335,6 +336,18 @@ export interface BoolOp extends ASTNode {
   type: 'BoolOp';
   op: 'and' | 'or';
   values: Expression[];  // [a, b, c] for "a and b and c"
+}
+
+/**
+ * 비교 체인
+ * a < b < c
+ * a == b != c
+ */
+export interface Compare extends ASTNode {
+  type: 'Compare';
+  expr: Expression;
+  ops: string[];           // ['<', '<']
+  comparators: Expression[];  // [b, c]
 }
 
 /**

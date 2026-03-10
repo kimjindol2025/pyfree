@@ -946,6 +946,9 @@ export class IRCompiler {
       case 'BoolOp':
         return this.compileBoolOp(expr);
 
+      case 'Compare':
+        return this.compileCompare(expr);
+
       case 'UnaryOp':
         return this.compileUnaryOp(expr);
 
@@ -1050,6 +1053,74 @@ export class IRCompiler {
       const globalName = this.builder.addGlobal(name);
       this.builder.emit(Opcode.LOAD_GLOBAL, [resultReg, globalName]);
       this.registerSymbol(name, true, undefined, globalName);
+    }
+
+    return resultReg;
+  }
+
+  /**
+   * 비교 체인 컴파일 (Compare: a < b < c)
+   * a < b < c → (a < b) and (b < c)
+   */
+  private compileCompare(expr: any): number {
+    const ops = expr.ops || [];
+    const comparators = expr.comparators || [];
+
+    if (ops.length === 0) {
+      return this.compileExpression(expr.expr);
+    }
+
+    // 첫 번째 값 평가
+    let leftReg = this.compileExpression(expr.expr);
+    let resultReg = this.allocRegister();
+    let firstComparison = true;
+
+    // 각 비교 수행
+    for (let i = 0; i < ops.length; i++) {
+      const op = ops[i];
+      const rightReg = this.compileExpression(comparators[i]);
+      const cmpReg = this.allocRegister();
+
+      // 비교 연산 수행
+      switch (op) {
+        case '<':
+          this.builder.emit(Opcode.LT, [cmpReg, leftReg, rightReg]);
+          break;
+        case '>':
+          this.builder.emit(Opcode.GT, [cmpReg, leftReg, rightReg]);
+          break;
+        case '==':
+          this.builder.emit(Opcode.EQ, [cmpReg, leftReg, rightReg]);
+          break;
+        case '!=':
+          this.builder.emit(Opcode.NE, [cmpReg, leftReg, rightReg]);
+          break;
+        case '<=':
+          this.builder.emit(Opcode.LE, [cmpReg, leftReg, rightReg]);
+          break;
+        case '>=':
+          this.builder.emit(Opcode.GE, [cmpReg, leftReg, rightReg]);
+          break;
+        default:
+          this.builder.emit(Opcode.LOAD_FALSE, [cmpReg]);
+      }
+
+      // 이전 비교와 AND
+      if (!firstComparison) {
+        const andReg = this.allocRegister();
+        this.builder.emit(Opcode.AND, [andReg, resultReg, cmpReg]);
+        this.freeRegister(resultReg);
+        this.freeRegister(cmpReg);
+        resultReg = andReg;
+      } else {
+        this.freeRegister(resultReg);
+        resultReg = cmpReg;
+        firstComparison = false;
+      }
+
+      // 다음 비교를 위해 left = right
+      this.freeRegister(leftReg);
+      leftReg = rightReg;
     }
 
     return resultReg;
