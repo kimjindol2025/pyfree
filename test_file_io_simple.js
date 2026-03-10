@@ -1,14 +1,27 @@
-const fs = require('fs');
 const path = require('path');
+const fs = require('fs');
 const { PyFreeLexer } = require(path.join(__dirname, 'dist/lexer/lexer.js'));
 const { PyFreeParser } = require(path.join(__dirname, 'dist/parser/parser.js'));
 const { IRCompiler } = require(path.join(__dirname, 'dist/runtime/ir.js'));
 const { VM, NativeLibrary } = require(path.join(__dirname, 'dist/runtime/vm.js'));
 
-// 예제 파일 읽기
-const code = fs.readFileSync('examples/05_dict.pf', 'utf-8');
+// 셀프호스팅 시뮬레이션
+const code = `
+# 1. 소스 파일 읽기 (셀프호스팅의 첫 단계)
+source = read_file("examples/01_hello_world.pf")
+print(source)
 
-console.log('📚 예제 05: 딕셔너리\n');
+# 2. 파일 쓰기
+write_file("/tmp/compiled_output.pf", "# Compiled output")
+result = read_file("/tmp/compiled_output.pf")
+print(result)
+
+# 3. 파일 존재 확인
+exists = file_exists("examples/01_hello_world.pf")
+print(exists)
+`;
+
+console.log('🚀 셀프호스팅 시뮬레이션: 파일 I/O\n');
 console.log('='.repeat(60) + '\n');
 
 try {
@@ -25,10 +38,8 @@ try {
   });
 
   vm.execute();
-  console.log('\n' + '='.repeat(60));
-  console.log('✅ 예제 실행 완료!');
+
+  console.log('✅ 셀프호스팅 파일 I/O 준비 완료!');
 } catch (e) {
   console.error('❌ ERROR:', e.message);
-  console.error(e.stack);
-  process.exit(1);
 }

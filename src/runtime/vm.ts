@@ -10,6 +10,7 @@
  */
 
 import { IRProgram, Instruction, Opcode, IRFunction } from './ir';
+import * as fs from 'fs';
 
 /**
  * 런타임 값
@@ -299,9 +300,25 @@ export class VM {
         this.buildDict(frame, aNum, bNum);
         break;
 
-      case Opcode.INDEX_GET:
-        frame.registers[aNum] = frame.registers[bNum][frame.registers[cNum]];
+      case Opcode.INDEX_GET: {
+        const obj = frame.registers[bNum];
+        const key = frame.registers[cNum];
+
+        // 딕셔너리 접근에서 키 없음 → KeyError 발생
+        if (obj && typeof obj === 'object' && !(key in obj)) {
+          const errorMsg = `KeyError: '${key}'`;
+          // FIXME: 정확한 예외 객체 구조화 필요
+          if (this.handlerStack.length > 0) {
+            // 예외 처리기가 있으면 호출 (현재는 기본 동작)
+            throw new Error(errorMsg);
+          } else {
+            throw new Error(errorMsg);
+          }
+        }
+
+        frame.registers[aNum] = obj[key];
         break;
+      }
 
       case Opcode.INDEX_SET:
         frame.registers[aNum][frame.registers[bNum]] = frame.registers[cNum];
@@ -337,6 +354,25 @@ export class VM {
         if (this.loopStack.length > 0) {
           frame.pc = this.loopStack[this.loopStack.length - 1].startOffset;
         }
+        break;
+
+      case Opcode.SETUP_TRY:
+        // SETUP_TRY [handler_count, finally_offset]
+        this.handlerStack.push({
+          offset: aNum,      // handler_count
+          endOffset: bNum    // finally_offset (unused for now)
+        });
+        break;
+
+      case Opcode.POP_TRY:
+        this.handlerStack.pop();
+        break;
+
+      case Opcode.RAISE:
+        // RAISE [exception_reg]
+        // For now, simple error handling
+        const exception = frame.registers[aNum];
+        throw new Error(`Exception: ${exception}`);
         break;
 
       // 기타
@@ -585,4 +621,75 @@ export const NativeLibrary = {
   min: (...args: number[]): number => Math.min(...args),
   pow: (base: number, exp: number): number => Math.pow(base, exp),
   sqrt: (value: number): number => Math.sqrt(value),
+
+  // 파일 I/O
+  read_file: (filename: string): string => {
+    try {
+      return fs.readFileSync(String(filename), 'utf-8');
+    } catch (e: any) {
+      throw new Error(`FileNotFoundError: ${filename}`);
+    }
+  },
+
+  write_file: (filename: string, content: string): null => {
+    try {
+      fs.writeFileSync(String(filename), String(content), 'utf-8');
+      return null;
+    } catch (e: any) {
+      throw new Error(`IOError: ${e.message}`);
+    }
+  },
+
+  open: (filename: string, mode: string = 'r'): any => {
+    const fname = String(filename);
+    const m = String(mode || 'r');
+
+    return {
+      read: function (): string {
+        try {
+          return fs.readFileSync(fname, 'utf-8');
+        } catch (e: any) {
+          throw new Error(`FileNotFoundError: ${fname}`);
+        }
+      },
+      write: function (content: string): null {
+        try {
+          fs.writeFileSync(fname, String(content), 'utf-8');
+          return null;
+        } catch (e: any) {
+          throw new Error(`IOError: ${e.message}`);
+        }
+      },
+      close: function (): null {
+        // Node.js는 자동으로 파일을 닫으므로 no-op
+        return null;
+      },
+      readlines: function (): string[] {
+        try {
+          const content = fs.readFileSync(fname, 'utf-8');
+          return content.split('\n');
+        } catch (e: any) {
+          throw new Error(`FileNotFoundError: ${fname}`);
+        }
+      },
+    };
+  },
+
+  // 파일 시스템
+  file_exists: (filename: string): boolean => {
+    try {
+      fs.accessSync(String(filename));
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  list_files: (directory: string = '.'): string[] => {
+    try {
+      return fs.readdirSync(String(directory));
+    } catch {
+      return [];
+    }
+  },
 };

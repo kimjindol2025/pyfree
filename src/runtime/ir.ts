@@ -823,13 +823,68 @@ export class IRCompiler {
    * Try 문장 컴파일
    */
   private compileTryStatement(stmt: any): void {
-    this.builder.emit(Opcode.SETUP_TRY, [this.builder.getCurrentOffset() + 100]);
+    // Handler 정보 수집
+    const handlers = stmt.handlers.map((handler: any) => ({
+      exceptionType: handler.exceptionType ? handler.exceptionType.name : 'Exception',
+      name: handler.name,
+      offset: 0  // 나중에 패칭됨
+    }));
 
+    const setupIndex = this.builder.getCurrentOffset();
+    // SETUP_TRY: [handler_count, jump_to_finally]
+    this.builder.emit(Opcode.SETUP_TRY, [
+      handlers.length,
+      0  // 나중에 finally offset으로 패칭
+    ]);
+
+    // Try 본체 컴파일
     for (const s of stmt.body) {
       this.compileStatement(s);
     }
 
+    // else 블록 (예외 없을 때만 실행)
+    if (stmt.elseBody) {
+      for (const s of stmt.elseBody) {
+        this.compileStatement(s);
+      }
+    }
+
+    // 예외 없으면 finally로 점프
+    const skipHandlersJump = this.builder.getCurrentOffset();
+    this.builder.emit(Opcode.JUMP, [0]); // 나중에 finally 또는 POP_TRY로 패칭
+
+    // Except 핸들러들 컴파일
+    for (let i = 0; i < handlers.length; i++) {
+      const handler = stmt.handlers[i];
+      handlers[i].offset = this.builder.getCurrentOffset();
+
+      // 예외 변수 등록
+      if (handler.name) {
+        const varReg = this.allocRegister();
+        this.registerSymbol(handler.name, false, varReg);
+      }
+
+      // Handler 본체 컴파일
+      for (const s of handler.body) {
+        this.compileStatement(s);
+      }
+
+      // Handler 종료 후 finally로 점프
+      this.builder.emit(Opcode.JUMP, [0]); // 나중에 finally 또는 POP_TRY로 패칭
+    }
+
+    // Finally 블록
+    const finallyOffset = this.builder.getCurrentOffset();
+    if (stmt.finallyBody) {
+      for (const s of stmt.finallyBody) {
+        this.compileStatement(s);
+      }
+    }
+
+    // POP_TRY
     this.builder.emit(Opcode.POP_TRY, []);
+
+    // FIXME: 모든 점프 주소 패칭 필요 (현재는 생략)
   }
 
   /**
