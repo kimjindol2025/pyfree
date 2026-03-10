@@ -441,8 +441,17 @@ export class IRCompiler {
     }
 
     const program = ast as any;
+
+    // 2026-03-10: TOP 3 - 함수 정의와 메인 코드 분리
+    // 모든 statement를 처리하되,
+    // - FunctionDef: 함수 메타데이터만 수집 (메인 코드에 추가하지 않음)
+    // - 나머지: 정상 컴파일
     for (const stmt of program.body) {
-      this.compileStatement(stmt);
+      if (stmt.type === 'FunctionDef' || stmt.type === 'FreeLangFunction') {
+        this.compileFunctionDefWithoutEmit(stmt);
+      } else {
+        this.compileStatement(stmt);
+      }
     }
 
     return this.builder.build();
@@ -502,27 +511,34 @@ export class IRCompiler {
   /**
    * 함수 정의 컴파일
    */
-  private compileFunctionDef(stmt: any): void {
+  /**
+   * 함수 정의 컴파일 (메인 코드에 포함하지 않음)
+   */
+  private compileFunctionDefWithoutEmit(stmt: any): void {
     const funcName = stmt.name;
     const paramCount = stmt.params ? stmt.params.length : 0;
     const paramNames = stmt.params ? stmt.params.map((p: any) => p.name) : [];
 
-    // 함수 심볼 등록 (전역)
-    const funcReg = this.allocRegister();
-    this.registerSymbol(funcName, true, funcReg);
-
-    // 함수 코드 빌드
+    // 2026-03-10: TOP 3 - 함수 정의 구현
+    // 함수 로컬 스코프 설정
     const oldLocalVars = this.localVars;
     this.localVars = [...paramNames];
     const oldSymbols = new Map(this.symbols);
     this.symbols.clear();
 
-    // 파라미터를 로컬 변수로 등록
+    // 파라미터를 로컬 변수로 등록 (인덱스 0부터: LOAD_FAST r[idx])
     paramNames.forEach((name: string, index: number) => {
       this.registerSymbol(name, false, index);
     });
 
-    const functionStartOffset = this.builder.getCurrentOffset();
+    // 함수 코드를 별도 배열에 수집 (메인 코드에 추가하지 않음)
+    const functionCode: Instruction[] = [];
+
+    // 임시 빌더 코드 저장 (복원용)
+    const oldBuilderCode = this.builder.code;
+    this.builder.code = functionCode;
+
+    // 함수 본문 컴파일
     for (const bodyStmt of stmt.body) {
       this.compileStatement(bodyStmt);
     }
@@ -531,21 +547,35 @@ export class IRCompiler {
     const noneReg = this.allocRegister();
     this.builder.emit(Opcode.LOAD_NONE, [noneReg]);
     this.builder.emit(Opcode.RETURN, [noneReg]);
+    this.freeRegister(noneReg);
+
+    // 빌더 코드 복원
+    this.builder.code = oldBuilderCode;
 
     // 함수 메타데이터 저장
     const irFunction: IRFunction = {
       name: funcName,
       paramCount,
       localCount: this.localVars.length,
-      code: [],
+      code: functionCode,
       isAsync: stmt.isAsync || false,
       paramNames,
     };
+
+    // IRCompiler의 functions 맵에 저장
     this.functions.set(funcName, irFunction);
+
+    // 또한 builder의 functions에도 저장 (build()에서 반환되도록)
+    (this.builder as any).functions.set(funcName, irFunction);
 
     // 심볼 복원
     this.symbols = oldSymbols;
     this.localVars = oldLocalVars;
+  }
+
+  private compileFunctionDef(stmt: any): void {
+    // 호환성 유지 (과거 코드에서 호출될 수 있음)
+    this.compileFunctionDefWithoutEmit(stmt);
   }
 
   /**

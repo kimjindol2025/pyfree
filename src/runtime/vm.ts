@@ -26,6 +26,7 @@ interface Frame {
   registers: PyFreeValue[];
   locals: Map<string, PyFreeValue>;
   returnValue?: PyFreeValue;
+  callDstReg?: number; // 2026-03-10: 함수 반환값을 저장할 호출자 레지스터
 }
 
 /**
@@ -61,6 +62,11 @@ export class VM {
     this.program = program;
     this.program.globals.forEach((value, key) => {
       this.globals.set(key, value);
+    });
+
+    // 2026-03-10: TOP 3 - 정의된 함수를 전역 변수로 등록
+    this.program.functions.forEach((func, name) => {
+      this.globals.set(name, func);
     });
 
     // 초기 프레임
@@ -243,6 +249,8 @@ export class VM {
         // CALL [dst, func, argc, arg1, arg2, ...]
         // 새로운 형식: 인자 레지스터들을 직접 전달
         const callArgRegs = instr.args.length > 3 ? instr.args.slice(3) : undefined;
+        // 2026-03-10: TOP 3 - 반환값 저장 위치 기록
+        frame.callDstReg = aNum; // dst 레지스터를 기억함
         this.callFunction(frame, aNum, bNum, cNum, callArgRegs as (number | string)[] | undefined);
         break;
 
@@ -360,18 +368,23 @@ export class VM {
         locals: new Map(),
       };
 
-      // 파라미터 전달
+      // 2026-03-10: TOP 3 - 파라미터 전달
+      // 인덱스와 이름 모두 저장 (LOAD_FAST에서 사용)
       if (argRegs && argRegs.length > 0) {
         // 새로운 형식
         for (let i = 0; i < argCount && i < func.paramCount; i++) {
           const argReg = argRegs[i];
           const reg = typeof argReg === 'number' ? argReg : parseInt(argReg as string);
-          newFrame.locals.set(func.paramNames[i], frame.registers[reg]);
+          const value = frame.registers[reg];
+          newFrame.locals.set(func.paramNames[i], value);  // 이름으로 저장
+          newFrame.locals.set(String(i), value);            // 인덱스로도 저장
         }
       } else {
         // 이전 형식
         for (let i = 0; i < argCount && i < func.paramCount; i++) {
-          newFrame.locals.set(func.paramNames[i], frame.registers[dst + 1 + i]);
+          const value = frame.registers[dst + 1 + i];
+          newFrame.locals.set(func.paramNames[i], value);  // 이름으로 저장
+          newFrame.locals.set(String(i), value);            // 인덱스로도 저장
         }
       }
 
@@ -389,9 +402,9 @@ export class VM {
 
     if (this.frameStack.length > 0) {
       const callerFrame = this.frameStack[this.frameStack.length - 1];
-      // 반환 값을 호출자의 레지스터에 저장
-      // (정확한 위치는 호출 인스트럭션이 결정)
-      callerFrame.registers[0] = returnValue;
+      // 2026-03-10: TOP 3 - 반환 값을 호출자의 정확한 레지스터에 저장
+      const dstReg = callerFrame.callDstReg ?? 0;
+      callerFrame.registers[dstReg] = returnValue;
     }
   }
 
