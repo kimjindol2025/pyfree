@@ -65,6 +65,11 @@ export class VM {
       this.globals.set(key, value);
     });
 
+    // 네이티브 라이브러리 함수 등록
+    Object.entries(NativeLibrary).forEach(([name, fn]) => {
+      this.globals.set(name, fn);
+    });
+
     // 초기 프레임
     this.frameStack.push({
       code: program.code,
@@ -263,7 +268,7 @@ export class VM {
         break;
 
       case Opcode.BUILD_DICT:
-        this.buildDict(frame, aNum, bNum);
+        this.buildDict(frame, aNum, bNum, instr.args);
         break;
 
       case Opcode.INDEX_GET:
@@ -448,11 +453,14 @@ export class VM {
   /**
    * 딕셔너리 생성
    */
-  private buildDict(frame: Frame, dst: number, count: number): void {
+  private buildDict(frame: Frame, dst: number, count: number, args: any[]): void {
     const dict: Record<string, PyFreeValue> = {};
+    // args[0] = dst, args[1] = count, args[2..] = interleaved key/value registers
     for (let i = 0; i < count; i++) {
-      const key = String(frame.registers[dst + 1 + 2 * i]);
-      const value = frame.registers[dst + 1 + 2 * i + 1];
+      const keyReg = args[2 + 2 * i];
+      const valueReg = args[2 + 2 * i + 1];
+      const key = String(frame.registers[keyReg]);
+      const value = frame.registers[valueReg];
       dict[key] = value;
     }
     frame.registers[dst] = dict;
