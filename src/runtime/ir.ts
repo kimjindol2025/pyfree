@@ -631,33 +631,67 @@ export class IRCompiler {
       return;
     }
 
+    // 2026-03-10: NaN 버그 수정
+    // 문제: 배열 길이를 모르고 1000번 고정 반복 → IR explosion + 잘못된 결과
+    // 해결: 배열 길이를 체크하고 그만큼만 반복
+    // 배열 상수 데이터에서 길이 추출
+
+    let arrayLength = 1000; // 기본값
+
+    // 배열 리터럴이면 직접 길이 확인
+    if (stmt.iterable.type === 'ArrayLiteral' && stmt.iterable.elements) {
+      arrayLength = stmt.iterable.elements.length;
+    }
+    // range() 호출이면 체크 (range(n) = n개, range(a,b) = b-a개)
+    else if (stmt.iterable.type === 'CallExpression' &&
+             stmt.iterable.callee.type === 'Identifier' &&
+             stmt.iterable.callee.name === 'range') {
+      const args = stmt.iterable.args || [];
+      if (args.length === 1 && args[0].type === 'NumberLiteral') {
+        arrayLength = args[0].value;
+      } else if (args.length === 2 && args[1].type === 'NumberLiteral') {
+        arrayLength = args[1].value - (args[0].type === 'NumberLiteral' ? args[0].value : 0);
+      }
+    }
+
     const loopStartOffset = this.builder.getCurrentOffset();
     this.loopStack.push(loopStartOffset);
 
-    // 각 요소에 대해 반복
-    // 간단한 구현: 배열이라고 가정
-    for (let i = 0; i < 1000; i++) {
-      const itemReg = this.allocRegister();
-      const idxConstIdx = this.builder.addConstant(i);
-      this.builder.emit(Opcode.LOAD_CONST, [itemReg, idxConstIdx]);
+    // 배열 리터럴인 경우 요소를 직접 처리 (2026-03-10 NaN 버그 완전 수정)
+    if ((stmt.iterable.type === 'List' || stmt.iterable.type === 'ArrayLiteral') && stmt.iterable.elements) {
+      // 배열 요소를 직접 반복
+      for (const elem of stmt.iterable.elements) {
+        // 요소값 계산
+        const elemReg = this.compileExpression(elem);
 
-      // 루프 본문 컴파일
-      const oldSymbol = this.lookupSymbol(targetName);
-      const targetReg = this.allocRegister();
-      this.registerSymbol(targetName, false, targetReg);
+        // 루프 변수에 요소값 할당
+        this.builder.emit(Opcode.STORE_GLOBAL, [targetName, elemReg]);
 
-      for (const s of stmt.body) {
-        this.compileStatement(s);
+        // 루프 본문 컴파일
+        for (const s of stmt.body) {
+          this.compileStatement(s);
+        }
+
+        this.freeRegister(elemReg);
       }
+    } else {
+      // 다른 이터러블 (일단 인덱스 기반으로 처리)
+      const maxIterations = Math.min(arrayLength, 1000);
+      for (let i = 0; i < maxIterations; i++) {
+        const itemReg = this.allocRegister();
+        const idxConstIdx = this.builder.addConstant(i);
+        this.builder.emit(Opcode.LOAD_CONST, [itemReg, idxConstIdx]);
 
-      if (oldSymbol) {
-        this.symbols.set(targetName, oldSymbol);
-      } else {
-        this.symbols.delete(targetName);
+        // 루프 변수를 전역으로 저장
+        this.builder.emit(Opcode.STORE_GLOBAL, [targetName, itemReg]);
+
+        // 루프 본문 컴파일
+        for (const s of stmt.body) {
+          this.compileStatement(s);
+        }
+
+        this.freeRegister(itemReg);
       }
-
-      this.freeRegister(itemReg);
-      this.freeRegister(targetReg);
     }
 
     this.loopStack.pop();
