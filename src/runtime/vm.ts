@@ -84,14 +84,20 @@ export class VM {
    * VM 실행
    */
   execute(debug?: boolean): void {
+    const startTime = Date.now();
+    const maxTimeMs = 30000; // 30초 실행 제한 (셀프호스팅용)
     let stepCount = 0;
-    const maxSteps = 1000; // 무한루프 방지
 
     while (!this.halted && this.frameStack.length > 0) {
       stepCount++;
-      if (stepCount > maxSteps) {
-        console.error(`❌ 실행 단계 초과 (${maxSteps}회). 무한루프 감지!`);
-        break;
+
+      // 10만 명령마다 시간 체크 (성능 최적화)
+      if (stepCount % 100000 === 0) {
+        const elapsed = Date.now() - startTime;
+        if (elapsed > maxTimeMs) {
+          console.error(`❌ 실행 시간 초과 (${maxTimeMs}ms). 프로그램 중단!`);
+          break;
+        }
       }
 
       const frame = this.frameStack[this.frameStack.length - 1];

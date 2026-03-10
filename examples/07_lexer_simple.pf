@@ -1,0 +1,40 @@
+# 셀프호스팅: 매우 기본적인 렉서
+# 목표: 소스 코드를 간단한 토큰으로 변환
+
+def tokenize_simple(source):
+    tokens = []
+    pos = 0
+    
+    while pos < len(source):
+        ch = source[pos]
+        
+        # 공백/탭 스킵
+        if ch == " " or ch == "\t":
+            pos = pos + 1
+            continue
+        
+        # 개행
+        if ch == "\n":
+            tokens.append("NEWLINE")
+            pos = pos + 1
+            continue
+        
+        # 주석 제거
+        if ch == "#":
+            while pos < len(source) and source[pos] != "\n":
+                pos = pos + 1
+            continue
+        
+        # 기본 토큰
+        tokens.append(ch)
+        pos = pos + 1
+    
+    return tokens
+
+# 테스트
+print("=== 매우 기본적인 렉서 ===")
+source = read_file("examples/01_hello_world.pf")
+
+tokens = tokenize_simple(source)
+print("토큰 개수:")
+print(len(tokens))
