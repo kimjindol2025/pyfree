@@ -1165,12 +1165,12 @@ export class IRCompiler {
     // 수정: allocCallArgRegister()로 전용 영역(200+) 사용
     const argRegs: number[] = [];
     for (let i = 0; i < args.length; i++) {
-      const argReg = this.allocCallArgRegister(i); // 전용 영역 사용
-      argRegs.push(argReg);
       const arg = args[i];
       const actualArg = arg.value || arg;
 
-      // 인자를 컴파일하여 결과를 argReg에 직접 로드
+      let argReg: number;
+
+      // 각 인자 타입별로 적절한 레지스터에 값을 로드
       if (actualArg.type === 'Literal') {
         // ✅ Phase 9: 리터럴 타입 변환
         let constValue = actualArg.value;
@@ -1187,31 +1187,45 @@ export class IRCompiler {
             constValue = parseInt(constValue, 10);
           }
         }
+        // 리터럴은 상수 영역 할당 (200+ 범위)
+        argReg = this.allocCallArgRegister(i);
         const constIdx = this.builder.addConstant(constValue);
         this.builder.emit(Opcode.LOAD_CONST, [argReg, constIdx]);
       } else if (actualArg.type === 'Identifier') {
+        // 식별자는 기존 레지스터에서 로드
         const symbol = this.lookupSymbol(actualArg.name);
+        argReg = this.allocCallArgRegister(i);
+
         if (symbol && !symbol.isGlobal && symbol.register !== undefined) {
-          // ✅ 버그 수정 (2026-03-09): LOAD_FAST에 변수 이름 전달
+          // 로컬 변수
           this.builder.emit(Opcode.LOAD_FAST, [argReg, actualArg.name]);
         } else if (symbol && symbol.isGlobal && symbol.globalName) {
-          // 전역 변수: globalName으로 참조
+          // 전역 변수
           this.builder.emit(Opcode.LOAD_GLOBAL, [argReg, symbol.globalName]);
         } else {
-          // 심볼 없음 또는 미해결 참조
+          // 미해결 참조
           this.builder.emit(Opcode.LOAD_NONE, [argReg]);
         }
       } else {
-        // 더 복잡한 표현식은 임시 레지스터에서 복사
+        // 🔴 버그 수정 (2026-03-10): 복잡한 표현식
+        // 이전: ADD + 0을 사용해 값을 복사 → 배열/객체는 NaN
+        // 수정: tempReg에서 계산 후 MOVE로 복사 (또는 직접 사용)
         const tempReg = this.compileExpression(actualArg);
-        // 값을 복사 (ADD를 사용한 트릭)
-        const zeroIdx = this.builder.addConstant(0);
-        const zeroReg = this.allocRegister();
-        this.builder.emit(Opcode.LOAD_CONST, [zeroReg, zeroIdx]);
-        this.builder.emit(Opcode.ADD, [argReg, tempReg, zeroReg]);
-        this.freeRegister(tempReg);
-        this.freeRegister(zeroReg);
+        argReg = this.allocCallArgRegister(i);
+
+        // 간단한 복사: 임시 변수에 저장
+        if (argReg !== tempReg) {
+          // 값을 직접 대입 (무조건 안전한 방법)
+          // IR에는 MOVE가 없으므로, tempReg를 그냥 CALL에 넘김
+          argReg = tempReg;
+          // 이미 tempReg에 값이 있으므로 추가 작업 불필요
+        } else {
+          // 우연히 같은 레지스터면 그냥 사용
+        }
+        // tempReg는 나중에 free 하지 않음 (CALL 전까지 살아있어야 함)
       }
+
+      argRegs.push(argReg);
     }
 
     // ✅ 버그 수정 (2026-03-09): CALL 형식 = [resultReg, funcReg, argCount, arg1, arg2, ...]
