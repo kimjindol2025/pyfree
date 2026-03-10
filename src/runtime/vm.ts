@@ -57,6 +57,7 @@ export class VM {
   private globals: Map<string, PyFreeValue> = new Map();
   private output: string[] = [];
   private halted: boolean = false;
+  public debugMode: boolean = false;
 
   constructor(program: IRProgram) {
     this.program = program;
@@ -81,8 +82,17 @@ export class VM {
   /**
    * VM 실행
    */
-  execute(): void {
+  execute(debug?: boolean): void {
+    let stepCount = 0;
+    const maxSteps = 1000; // 무한루프 방지
+
     while (!this.halted && this.frameStack.length > 0) {
+      stepCount++;
+      if (stepCount > maxSteps) {
+        console.error(`❌ 실행 단계 초과 (${maxSteps}회). 무한루프 감지!`);
+        break;
+      }
+
       const frame = this.frameStack[this.frameStack.length - 1];
 
       if (frame.pc >= frame.code.length) {
@@ -91,6 +101,14 @@ export class VM {
       }
 
       const instr = frame.code[frame.pc];
+
+      if (debug && [1, 10, 50, 51, 30, 60].includes(instr.op as any)) {
+        const [a, b, c] = instr.args;
+        const opNames: Record<number, string> = { 1: 'LOAD_GLOBAL', 10: 'STORE_GLOBAL', 50: 'JUMP', 51: 'JUMP_IF_FALSE', 30: 'LT', 60: 'CALL' };
+        const opName = opNames[instr.op as any] || `OP_${instr.op}`;
+        console.log(`[${stepCount}] PC=${frame.pc} ${opName.padEnd(15)} a=${typeof a === 'number' ? a : `"${a}"`} | r[1]=${frame.registers[1]} r[3]=${frame.registers[3]}`);
+      }
+
       frame.pc++;
 
       this.executeInstruction(instr, frame);
@@ -114,6 +132,10 @@ export class VM {
 
       case Opcode.LOAD_GLOBAL:
         frame.registers[aNum] = this.globals.get(String(b));
+        // DEBUG: 인덱스 변수 추적
+        if (this.debugMode && String(b).includes('_index')) {
+          console.error(`[LOAD_GLOBAL] reg[${aNum}] = ${String(b)} = ${frame.registers[aNum]}`);
+        }
         break;
 
       case Opcode.LOAD_FAST:
@@ -135,6 +157,10 @@ export class VM {
       // 저장
       case Opcode.STORE_GLOBAL:
         this.globals.set(String(a), frame.registers[bNum]);
+        // DEBUG: 인덱스 변수 추적
+        if (this.debugMode && String(a).includes('_index')) {
+          console.error(`[STORE_GLOBAL] ${a} = ${frame.registers[bNum]}`);
+        }
         break;
 
       case Opcode.STORE_FAST:
@@ -192,6 +218,10 @@ export class VM {
       case Opcode.LT:
         frame.registers[aNum] =
           frame.registers[bNum] < frame.registers[cNum];
+        // DEBUG: 루프 조건 추적
+        if (this.debugMode) {
+          console.error(`[LT] reg[${aNum}] = reg[${bNum}]=${frame.registers[bNum]} < reg[${cNum}]=${frame.registers[cNum]} = ${frame.registers[aNum]}`);
+        }
         break;
 
       case Opcode.GT:
@@ -229,7 +259,9 @@ export class VM {
 
       // 제어 흐름
       case Opcode.JUMP:
-        frame.pc = bNum;
+        // BUG FIX 2026-03-10: JUMP는 한 개 인자만 받음 (a에 target값)
+        // bNum을 사용하면 undefined → 0이 되어 프로그램 처음으로 점프됨
+        frame.pc = typeof a === 'number' ? a : 0;
         break;
 
       case Opcode.JUMP_IF_FALSE:

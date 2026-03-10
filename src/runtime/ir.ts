@@ -653,11 +653,9 @@ export class IRCompiler {
    * For 루프 컴파일
    */
   private compileForLoop(stmt: any): void {
-    const iterReg = this.compileExpression(stmt.iterable);
     const targetName = stmt.target.type === 'Identifier' ? stmt.target.name : null;
 
     if (!targetName) {
-      this.freeRegister(iterReg);
       return;
     }
 
@@ -710,7 +708,8 @@ export class IRCompiler {
       // 해결: 런타임 루프 생성 (index 기반)
       // 결과: 6013 instructions → ~250 (24배 감소)
 
-      // 1. 이터러블을 레지스터에 로드 (iterReg는 루프 전체에서 사용)
+      // 2026-03-10 BUG FIX: iterReg 중복 선언 제거
+      // 1. 이터러블을 레지스터에 로드 (루프 전체에서 사용)
       const iterReg = this.compileExpression(stmt.iterable);
 
       // 2. 루프 인덱스 초기화: _index_xxx = 0
@@ -794,7 +793,6 @@ export class IRCompiler {
     }
 
     this.loopStack.pop();
-    this.freeRegister(iterReg);
   }
 
   /**
