@@ -1,0 +1,9 @@
+x = 10
+y = 5
+sum_val = x + y
+product = x * y
+difference = x - y
+print("Arithmetic Operations")
+print(sum_val)
+print(product)
+print(difference)

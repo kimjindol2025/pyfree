@@ -1,0 +1,3 @@
+print("Hello, PyFree!")
+print("Welcome to self-hosting compiler")
+print(2026)
