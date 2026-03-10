@@ -264,7 +264,7 @@ export class VM {
 
       // 컨테이너
       case Opcode.BUILD_LIST:
-        this.buildList(frame, aNum, bNum);
+        this.buildList(frame, aNum, bNum, instr.args);
         break;
 
       case Opcode.BUILD_DICT:
@@ -442,10 +442,12 @@ export class VM {
   /**
    * 리스트 생성
    */
-  private buildList(frame: Frame, dst: number, count: number): void {
+  private buildList(frame: Frame, dst: number, count: number, args: any[]): void {
     const list: PyFreeValue[] = [];
+    // args = [dst, count, elem0_reg, elem1_reg, ...]
     for (let i = 0; i < count; i++) {
-      list.push(frame.registers[dst + 1 + i]);
+      const elemReg = args[2 + i];
+      list.push(frame.registers[elemReg]);
     }
     frame.registers[dst] = list;
   }
