@@ -401,6 +401,50 @@ export class VM {
   ): void {
     const func = frame.registers[funcIdx];
 
+    // 클래스 호출: Class() → 인스턴스 생성
+    if (typeof func === 'object' && func.__class__ === true) {
+      // 인스턴스 생성
+      const instance: PyFreeValue = {
+        __instance__: true,
+        __class__: func.__name__,
+      };
+
+      // __init__이 있으면 호출
+      if (func.__init__) {
+        const initFunc = func.__init__;
+        if (typeof initFunc === 'object' && initFunc.code) {
+          const newFrame: Frame = {
+            function: initFunc,
+            code: initFunc.code,
+            pc: 0,
+            registers: new Array(256),
+            locals: new Map(),
+          };
+
+          // self를 첫 번째 인자로 전달
+          newFrame.locals.set('self', instance);
+          newFrame.locals.set('0', instance);
+
+          // 나머지 인자들 전달
+          if (argRegs && argRegs.length > 0) {
+            for (let i = 0; i < argCount && i < initFunc.paramCount - 1; i++) {
+              const argReg = argRegs[i];
+              const reg = typeof argReg === 'number' ? argReg : parseInt(argReg as string);
+              const value = frame.registers[reg];
+              const paramName = initFunc.paramNames[i + 1];
+              newFrame.locals.set(paramName, value);
+              newFrame.locals.set(String(i + 1), value);
+            }
+          }
+
+          this.frameStack.push(newFrame);
+        }
+      }
+
+      frame.registers[dst] = instance;
+      return;
+    }
+
     // 네이티브 함수 (print, len, range 등)
     if (typeof func === 'function') {
       const args: PyFreeValue[] = [];

@@ -582,17 +582,47 @@ export class IRCompiler {
    * 클래스 정의 컴파일
    */
   private compileClassDef(stmt: any): void {
-    // 간단한 구현: 클래스를 딕셔너리로 취급
     const className = stmt.name;
     const classReg = this.allocRegister();
 
-    // 빈 딕셔너리 생성
-    this.builder.emit(Opcode.BUILD_DICT, [classReg, 0]);
+    // 클래스 메타데이터 딕셔너리 생성: {__name__: classname, __init__: func, ...}
+    const dict: Record<string, any> = {
+      __name__: className,
+      __methods__: {},
+    };
+
+    // 클래스 본체에서 메서드 수집
+    for (const item of stmt.body) {
+      if (item.type === 'FunctionDef') {
+        // 메서드 함수를 클래스 딕셔너리에 추가
+        // 함수는 따로 컴파일되므로, 여기서는 메타데이터만 등록
+        dict.__methods__[item.name] = item.name;
+      }
+    }
+
+    // 클래스 객체를 상수로 추가
+    const classConstIdx = this.builder.addConstant({
+      __class__: true,
+      __name__: className,
+      __init__: null,  // 나중에 VM에서 할당
+      __methods__: Object.keys(dict.__methods__),
+    });
+
+    // 클래스 레지스터에 로드
+    this.builder.emit(Opcode.LOAD_CONST, [classReg, classConstIdx]);
 
     // 전역으로 저장
     const globalName = this.builder.addGlobal(className);
     this.builder.emit(Opcode.STORE_GLOBAL, [globalName, classReg]);
     this.registerSymbol(className, true, classReg, globalName);
+
+    // 클래스 본체의 메서드들 컴파일 (이들은 클래스 본체 스코프에서 정의됨)
+    // FIXME: 클래스 스코프 처리 필요
+    for (const item of stmt.body) {
+      if (item.type === 'FunctionDef') {
+        this.compileFunctionDef(item);
+      }
+    }
   }
 
   /**
@@ -929,7 +959,7 @@ export class IRCompiler {
       this.freeRegister(idxReg);
     } else if (stmt.target.type === 'MemberAccess') {
       // 멤버 접근 할당: a.x = value
-      const objReg = this.compileExpression(stmt.target.obj);
+      const objReg = this.compileExpression(stmt.target.object);
       const attrName = stmt.target.attr;
       this.builder.emit(Opcode.ATTR_SET, [objReg, attrName as any, valueReg]);
       this.freeRegister(objReg);
@@ -1324,7 +1354,7 @@ export class IRCompiler {
    */
   private compileMemberAccess(expr: any): number {
     const resultReg = this.allocRegister();
-    const objReg = this.compileExpression(expr.obj);
+    const objReg = this.compileExpression(expr.object);
     const attr = expr.attr;
 
     this.builder.emit(Opcode.ATTR_GET, [resultReg, objReg, attr as any]);
