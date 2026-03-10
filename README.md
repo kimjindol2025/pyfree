@@ -30,7 +30,7 @@ IR 컴파일러 (IRCompiler)
 가상머신 (VM)
 ```
 
-## 📈 Phase 진행 (완료!)
+## 📈 Phase 진행 (Phase 12 완료!)
 
 - **Phase 8**: 다중 라인 파싱 ✅
 - **Phase 9**: 함수 정의/호출 ✅ (Turing Complete!)
@@ -40,9 +40,12 @@ IR 컴파일러 (IRCompiler)
   - 10.3: IR 버그 수정 (79%)
   - 10.4: BoolOp + Compare + IfExp (79%)
   - 10 Final: Dictionary + Parser 개선 (95%)
-- **Phase 11**: Dynamic Register Pool ✅ **(100%)** 🎉
+- **Phase 11**: Dynamic Register Pool ✅ (100%) 🎉
   - RegisterAllocator 확장 (256 → 10000)
   - 07_lexer.pf 완전 통과
+- **Phase 12**: List 처리 버그 수정 ✅ **(100%)** 🎉
+  - BUILD_LIST instruction 수정
+  - list 출력/반복 정상화
 
 ## 🎯 다음 단계 (미래 계획)
 
@@ -144,5 +147,6 @@ node /tmp/test-all.js
 
 **생성**: 2026-03-09
 **완료**: 2026-03-11 (Phase 10-11 ✅)
+**Phase 12 완료**: 2026-03-11 (List 버그 수정 ✅)
 **최종 상태**: Production Ready (프로토타입 수준)
 **Gogs**: https://gogs.dclub.kr/kim/pyfree
