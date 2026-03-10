@@ -30,46 +30,55 @@ IR 컴파일러 (IRCompiler)
 가상머신 (VM)
 ```
 
-## 📈 Phase 진행 (Phase 12 완료!)
+## 📈 Phase 진행 (Phase 13 완료!)
 
 - **Phase 8**: 다중 라인 파싱 ✅
 - **Phase 9**: 함수 정의/호출 ✅ (Turing Complete!)
 - **Phase 10**: 고급 기능 ✅ (Dictionary, BoolOp, Compare, IfExp, Exception)
-  - 10.1: Static Bundler (70%)
-  - 10.2: NativeLibrary 확장 (70%)
-  - 10.3: IR 버그 수정 (79%)
-  - 10.4: BoolOp + Compare + IfExp (79%)
-  - 10 Final: Dictionary + Parser 개선 (95%)
-- **Phase 11**: Dynamic Register Pool ✅ (100%) 🎉
-  - RegisterAllocator 확장 (256 → 10000)
-  - 07_lexer.pf 완전 통과
-- **Phase 12**: List 처리 버그 수정 ✅ **(100%)** 🎉
-  - BUILD_LIST instruction 수정
-  - list 출력/반복 정상화
+- **Phase 11**: Dynamic Register Pool ✅ (256 → 10,000)
+- **Phase 12**: List 처리 버그 수정 ✅ (BUILD_LIST 수정)
+- **Phase 13**: Debug Mode & Pipeline Validation ✅ **(100%)** 🎉
+  - PipelineValidator: 4단계 검증
+  - DetailedAnalyzer: 성능 분석
+  - Debug CLI: 대화형 검증 도구
 
 ## 🎯 다음 단계 (미래 계획)
 
-**Phase 12**: 성능 최적화
+**Phase 13**: Debug Mode & Pipeline Validation ✅ **(완료!)**
+- Lexer/Parser 검증
+- IR/Register 분석
+- VM 안정성 검증
+- 자동화 디버그 도구
+
+**Phase 14**: 성능 최적화
 - Register spilling
 - Optimizer (constant folding, dead code elimination)
 
-**Phase 13**: JIT Compilation
+**Phase 15**: JIT Compilation
 - Hot path 감지
 - Native code 생성
 
-**Phase 14**: 자체 호스팅
+**Phase 16**: 자체 호스팅
 - PyFree → PyFree 부트스트랩
 
 ## 📝 세션 문서
 
-### Phase 10-11 보고서
-- [Phase 10 세션 요약](./PHASE10_SESSION_SUMMARY.md) - 95% 성공률 달성
-- [Phase 11 완료 보고서](./PHASE11_COMPLETION_REPORT.md) - 100% 성공률 달성
+### Phase 보고서
+- [Phase 10 세션 요약](./PHASE10_SESSION_SUMMARY.md) - 95% 성공률
+- [Phase 11 완료 보고서](./PHASE11_COMPLETION_REPORT.md) - 100% 성공률
+- [Phase 12 완료 보고서](./PHASE12_COMPLETION_REPORT.md) - List 버그 수정
+- [Pipeline Validation Report](./PIPELINE_VALIDATION_REPORT.md) - Phase 13 검증
 
 ### 개발 가이드
 - [버그 & 수정 기록](./BUGS_AND_FIXES.md) - 8개 버그 상세 분석
 - [문법 실수 모음](./SYNTAX_MISTAKES.md) - 패턴별 실수 6가지
 - [힌트집](./HINTS.md) - 빠른 진단 키워드
+
+### Debug Mode 도구
+- `debug-cli.ts`: 파이프라인 단계별 검증
+- `debug-detailed.ts`: 상세 성능 분석
+- `run-detailed-analysis.ts`: 분석 결과 리포트
+- `debug-analyze.sh`: Bash 래퍼
 
 ## 📋 예제 목록 (모두 통과 ✅)
 
@@ -105,7 +114,14 @@ npm run build
 node /tmp/run-pf.js examples/01_hello_world.pf
 
 # 모든 테스트 실행
-node /tmp/test-all.js
+bash test_all.sh
+
+# 디버그 모드 (파이프라인 검증)
+npx ts-node src/debug-cli.ts dictionary
+npx ts-node src/debug-cli.ts examples/03_list_processing.pf -v
+
+# 상세 분석 (성능 메트릭)
+npx ts-node src/run-detailed-analysis.ts examples/07_lexer.pf
 ```
 
 ## 💡 핵심 기술
@@ -148,5 +164,8 @@ node /tmp/test-all.js
 **생성**: 2026-03-09
 **완료**: 2026-03-11 (Phase 10-11 ✅)
 **Phase 12 완료**: 2026-03-11 (List 버그 수정 ✅)
-**최종 상태**: Production Ready (프로토타입 수준)
+**Phase 13 완료**: 2026-03-11 (Debug Mode & Pipeline Validation ✅)
+**최종 상태**: Production Ready (Fully Tested)
+**총 라인**: ~4,500 (src + docs)
 **Gogs**: https://gogs.dclub.kr/kim/pyfree
+**커밋**: 95ea05a (Phase 13 완료)
