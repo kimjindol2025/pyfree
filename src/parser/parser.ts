@@ -1091,6 +1091,11 @@ export class PyFreeParser {
   private parseDictOrSet(): AST.Expression {
     const startToken = this.previous();
 
+    // 개행, INDENT, DEDENT 스킵 (다중 라인 딕셔너리/집합 지원)
+    while (this.match(TokenType.NEWLINE) || this.match(TokenType.INDENT) || this.match(TokenType.DEDENT)) {
+      // Skip all newlines and indentation
+    }
+
     if (this.check(TokenType.RBRACE)) {
       this.advance();
       // 빈 중괄호는 빈 딕셔너리
@@ -1104,16 +1109,32 @@ export class PyFreeParser {
 
     const first = this.parseExpression();
 
+    // 개행/들여쓰기 스킵
+    this.skipWhitespaceTokens();
+
     // 딕셔너리 확인
     if (this.match(TokenType.COLON)) {
+      // 개행/들여쓰기 스킵
+      this.skipWhitespaceTokens();
       const value = this.parseExpression();
       const pairs = [{ key: first, value }];
 
+      // 개행/들여쓰기 스킵
+      this.skipWhitespaceTokens();
+
       while (this.match(TokenType.COMMA)) {
+        // 개행/들여쓰기 스킵
+        this.skipWhitespaceTokens();
         if (this.check(TokenType.RBRACE)) break;
         const k = this.parseExpression();
+        // 개행/들여쓰기 스킵
+        this.skipWhitespaceTokens();
         this.consume(TokenType.COLON, ': 필요');
+        // 개행/들여쓰기 스킵
+        this.skipWhitespaceTokens();
         const v = this.parseExpression();
+        // 개행/들여쓰기 스킵
+        this.skipWhitespaceTokens();
         pairs.push({ key: k, value: v });
       }
 
@@ -1128,9 +1149,15 @@ export class PyFreeParser {
 
     // 집합
     const elements = [first];
+    // 개행/들여쓰기 스킵
+    this.skipWhitespaceTokens();
     while (this.match(TokenType.COMMA)) {
+      // 개행/들여쓰기 스킵
+      this.skipWhitespaceTokens();
       if (this.check(TokenType.RBRACE)) break;
       elements.push(this.parseExpression());
+      // 개행/들여쓰기 스킵
+      this.skipWhitespaceTokens();
     }
 
     this.consume(TokenType.RBRACE, '} 필요');
@@ -1672,6 +1699,15 @@ export class PyFreeParser {
       }
     }
     return false;
+  }
+
+  /**
+   * 다중 라인 데이터 구조 내에서 개행과 들여쓰기 토큰 스킵
+   */
+  private skipWhitespaceTokens(): void {
+    while (this.match(TokenType.NEWLINE) || this.match(TokenType.INDENT) || this.match(TokenType.DEDENT)) {
+      // Skip whitespace tokens
+    }
   }
 
   private consume(type: TokenType, message: string): Token {
