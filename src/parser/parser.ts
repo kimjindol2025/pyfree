@@ -47,6 +47,15 @@ export class PyFreeParser {
    * 문장 파싱
    */
   private parseStatement(): AST.Statement | null {
+    // 빈 줄 처리: NEWLINE과 DEDENT 토큰 건너뛰기
+    while (this.check(TokenType.NEWLINE) || this.check(TokenType.DEDENT)) {
+      if (this.check(TokenType.DEDENT)) {
+        // DEDENT는 상위 블록에서 처리해야 함
+        break;
+      }
+      this.advance();
+    }
+
     const token = this.peek();
 
     if (!token || token.type === TokenType.EOF) return null;
