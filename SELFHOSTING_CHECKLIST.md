@@ -223,7 +223,7 @@ print(total)           # 예상: 15, 실제: NaN
 - IR Instructions: 6027 → 53 (114배 감소)
 - Constants: 1003 → 9 (111배 감소)
 - Output: NaN → 15 ✅
-- Commit: `[해야함]`
+- Commit: `[진행중]` (TOP 2 완료 후 함께 푸시 예정)
 
 ---
 
