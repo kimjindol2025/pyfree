@@ -1,0 +1,21 @@
+def add(a, b):
+    return a + b
+
+def multiply(a, b):
+    return a * b
+
+x = 10
+y = 5
+
+sum_result = add(x, y)
+print("10 + 5 =")
+print(sum_result)
+
+product = multiply(x, y)
+print("10 * 5 =")
+print(product)
+
+if sum_result > product:
+    print("Sum is greater than product")
+else:
+    print("Product is greater than sum")

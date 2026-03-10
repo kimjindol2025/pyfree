@@ -1,0 +1,301 @@
+# 셀프호스팅: 기본 렉서 (PyFree로 작성)
+# 목표: 소스 코드를 토큰으로 변환
+
+# 토큰 타입 정의 (딕셔너리)
+def create_token(type, value, line, col):
+    return {
+        "type": type,
+        "value": value,
+        "line": line,
+        "col": col
+    }
+
+# 기본 렉서 클래스 (딕셔너리로 표현)
+def tokenize(source):
+    tokens = []
+    pos = 0
+    line = 1
+    col = 1
+    
+    # 키워드 정의
+    keywords = {
+        "print": "PRINT",
+        "def": "DEF",
+        "class": "CLASS",
+        "if": "IF",
+        "else": "ELSE",
+        "for": "FOR",
+        "while": "WHILE",
+        "return": "RETURN",
+        "break": "BREAK",
+        "continue": "CONTINUE",
+        "pass": "PASS",
+        "try": "TRY",
+        "except": "EXCEPT",
+        "finally": "FINALLY",
+        "True": "TRUE",
+        "False": "FALSE",
+        "None": "NONE",
+    }
+    
+    length = len(source)
+    
+    # 메인 토큰화 루프
+    while pos < length:
+        ch = source[pos]
+        
+        # 공백 스킵
+        if ch == " " or ch == "\t":
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        # 개행
+        if ch == "\n":
+            tokens.append(create_token("NEWLINE", ch, line, col))
+            pos = pos + 1
+            line = line + 1
+            col = 1
+            continue
+        
+        # 주석 (Python #)
+        if ch == "#":
+            while pos < length and source[pos] != "\n":
+                pos = pos + 1
+            continue
+        
+        # 문자열 (간단한 버전)
+        if ch == "\"" or ch == "'":
+            quote = ch
+            start_col = col
+            pos = pos + 1
+            col = col + 1
+            string_val = ""
+            
+            while pos < length and source[pos] != quote:
+                string_val = string_val + source[pos]
+                if source[pos] == "\n":
+                    line = line + 1
+                    col = 1
+                else:
+                    col = col + 1
+                pos = pos + 1
+            
+            if pos < length:
+                pos = pos + 1
+                col = col + 1
+            
+            tokens.append(create_token("STRING", string_val, line, start_col))
+            continue
+        
+        # 숫자
+        if ch == "0" or ch == "1" or ch == "2" or ch == "3" or ch == "4" or ch == "5" or ch == "6" or ch == "7" or ch == "8" or ch == "9":
+            num_str = ""
+            start_col = col
+            
+            while pos < length:
+                c = source[pos]
+                if c == "0" or c == "1" or c == "2" or c == "3" or c == "4" or c == "5" or c == "6" or c == "7" or c == "8" or c == "9" or c == ".":
+                    num_str = num_str + c
+                    pos = pos + 1
+                    col = col + 1
+                else:
+                    break
+            
+            tokens.append(create_token("NUMBER", num_str, line, start_col))
+            continue
+        
+        # 식별자 및 키워드
+        if (ch == "a" or ch == "b" or ch == "c" or ch == "d" or ch == "e" or ch == "f" or ch == "g" or ch == "h" or ch == "i" or ch == "j" or ch == "k" or ch == "l" or ch == "m" or ch == "n" or ch == "o" or ch == "p" or ch == "q" or ch == "r" or ch == "s" or ch == "t" or ch == "u" or ch == "v" or ch == "w" or ch == "x" or ch == "y" or ch == "z") or (ch == "A" or ch == "B" or ch == "C" or ch == "D" or ch == "E" or ch == "F" or ch == "G" or ch == "H" or ch == "I" or ch == "J" or ch == "K" or ch == "L" or ch == "M" or ch == "N" or ch == "O" or ch == "P" or ch == "Q" or ch == "R" or ch == "S" or ch == "T" or ch == "U" or ch == "V" or ch == "W" or ch == "X" or ch == "Y" or ch == "Z") or ch == "_":
+            ident = ""
+            start_col = col
+            
+            while pos < length:
+                c = source[pos]
+                if c == "_" or (c == "a" or c == "b" or c == "c" or c == "d" or c == "e" or c == "f" or c == "g" or c == "h" or c == "i" or c == "j" or c == "k" or c == "l" or c == "m" or c == "n" or c == "o" or c == "p" or c == "q" or c == "r" or c == "s" or c == "t" or c == "u" or c == "v" or c == "w" or c == "x" or c == "y" or c == "z") or (c == "A" or c == "B" or c == "C" or c == "D" or c == "E" or c == "F" or c == "G" or c == "H" or c == "I" or c == "J" or c == "K" or c == "L" or c == "M" or c == "N" or c == "O" or c == "P" or c == "Q" or c == "R" or c == "S" or c == "T" or c == "U" or c == "V" or c == "W" or c == "X" or c == "Y" or c == "Z") or (c == "0" or c == "1" or c == "2" or c == "3" or c == "4" or c == "5" or c == "6" or c == "7" or c == "8" or c == "9"):
+                    ident = ident + c
+                    pos = pos + 1
+                    col = col + 1
+                else:
+                    break
+            
+            # 키워드인지 확인
+            token_type = keywords.get(ident, "IDENTIFIER")
+            tokens.append(create_token(token_type, ident, line, start_col))
+            continue
+        
+        # 연산자 및 구분자
+        next_ch = ""
+        if pos + 1 < length:
+            next_ch = source[pos + 1]
+        
+        # 2글자 연산자
+        two_char = ch + next_ch
+        
+        if two_char == "==":
+            tokens.append(create_token("EQ", two_char, line, col))
+            pos = pos + 2
+            col = col + 2
+            continue
+        
+        if two_char == "!=":
+            tokens.append(create_token("NE", two_char, line, col))
+            pos = pos + 2
+            col = col + 2
+            continue
+        
+        if two_char == "<=":
+            tokens.append(create_token("LE", two_char, line, col))
+            pos = pos + 2
+            col = col + 2
+            continue
+        
+        if two_char == ">=":
+            tokens.append(create_token("GE", two_char, line, col))
+            pos = pos + 2
+            col = col + 2
+            continue
+        
+        # 1글자 연산자
+        if ch == "+":
+            tokens.append(create_token("PLUS", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "-":
+            tokens.append(create_token("MINUS", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "*":
+            tokens.append(create_token("MUL", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "/":
+            tokens.append(create_token("DIV", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "%":
+            tokens.append(create_token("MOD", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "=":
+            tokens.append(create_token("ASSIGN", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "<":
+            tokens.append(create_token("LT", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == ">":
+            tokens.append(create_token("GT", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "!":
+            tokens.append(create_token("NOT", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "(":
+            tokens.append(create_token("LPAREN", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == ")":
+            tokens.append(create_token("RPAREN", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "[":
+            tokens.append(create_token("LBRACK", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "]":
+            tokens.append(create_token("RBRACK", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "{":
+            tokens.append(create_token("LBRACE", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == "}":
+            tokens.append(create_token("RBRACE", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == ":":
+            tokens.append(create_token("COLON", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == ";":
+            tokens.append(create_token("SEMI", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == ",":
+            tokens.append(create_token("COMMA", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        if ch == ".":
+            tokens.append(create_token("DOT", ch, line, col))
+            pos = pos + 1
+            col = col + 1
+            continue
+        
+        # 모르는 문자는 스킵
+        pos = pos + 1
+        col = col + 1
+    
+    return tokens
+
+# 테스트
+print("=== PyFree 기본 렉서 ===")
+print("")
+
+source = read_file("examples/01_hello_world.pf")
+print("소스 파일:")
+print(source)
+print("")
+
+tokens = tokenize(source)
+print("토큰 개수:")
+print(len(tokens))
+print("")
+
+print("첫 5개 토큰:")
+for i in range(5):
+    if i < len(tokens):
+        token = tokens[i]
+        print(token)
+
+print("")
+print("✅ 렉서 실행 완료")

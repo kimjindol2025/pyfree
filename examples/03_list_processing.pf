@@ -1,0 +1,19 @@
+numbers = [1, 2, 3, 4, 5]
+print("Original list:")
+print(numbers)
+
+total = 0
+for i in numbers:
+    total = total + i
+
+print("Sum of list:")
+print(total)
+
+length = len(numbers)
+print("Length of list:")
+print(length)
+
+print("Doubled values:")
+for i in numbers:
+    doubled = i * 2
+    print(doubled)

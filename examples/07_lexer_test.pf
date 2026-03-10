@@ -1,0 +1,13 @@
+# 테스트: 파일 읽고 문자 개수만 세기
+
+source = read_file("examples/01_hello_world.pf")
+count = 0
+pos = 0
+
+while pos < len(source):
+    count = count + 1
+    pos = pos + 1
+
+print("문자 개수:")
+print(count)
+print("✅ 완료")

@@ -1,0 +1,11 @@
+def add(a, b):
+    return a + b
+
+def mul(x, y):
+    return x * y
+
+x = add(10, 5)
+print(x)
+
+y = mul(4, 7)
+print(y)

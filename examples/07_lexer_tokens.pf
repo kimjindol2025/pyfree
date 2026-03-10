@@ -1,0 +1,33 @@
+# 렉서: 기본 토큰 추출
+
+source = read_file("examples/01_hello_world.pf")
+print("=== 토큰 추출 ===")
+print("")
+
+# 간단한 토큰 세기: (, ), ", ', print 등
+count_paren = 0
+count_quote = 0
+count_print = 0
+
+pos = 0
+length = len(source)
+
+while pos < length:
+    ch = source[pos]
+    
+    if ch == "(":
+        count_paren = count_paren + 1
+    
+    if ch == "\"" or ch == "'":
+        count_quote = count_quote + 1
+    
+    pos = pos + 1
+
+print("괄호 ( 개수:")
+print(count_paren)
+
+print("따옴표 개수:")
+print(count_quote)
+
+print("")
+print("✅ 토큰 분석 완료")

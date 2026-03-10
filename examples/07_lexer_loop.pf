@@ -1,0 +1,14 @@
+# 렉서: while 루프로 문자 세기
+
+source = read_file("examples/01_hello_world.pf")
+count = 0
+pos = 0
+length = len(source)
+
+while pos < length:
+    count = count + 1
+    pos = pos + 1
+
+print("총 문자 수:")
+print(count)
+print("✅ while 루프 완료")

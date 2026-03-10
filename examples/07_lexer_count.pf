@@ -1,0 +1,6 @@
+# 간단한 렉서: print 개수 세기
+
+source = read_file("examples/01_hello_world.pf")
+print("파일 크기:")
+print(len(source))
+print("✅ 완료")

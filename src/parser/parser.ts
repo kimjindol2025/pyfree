@@ -54,6 +54,15 @@ export class PyFreeParser {
    * 문장 파싱
    */
   private parseStatement(): AST.Statement | null {
+    // 빈 줄 처리: NEWLINE과 DEDENT 토큰 건너뛰기
+    while (this.check(TokenType.NEWLINE) || this.check(TokenType.DEDENT)) {
+      if (this.check(TokenType.DEDENT)) {
+        // DEDENT는 상위 블록에서 처리해야 함
+        break;
+      }
+      this.advance();
+    }
+
     const token = this.peek();
 
     if (!token || token.type === TokenType.EOF) return null;
@@ -192,15 +201,24 @@ export class PyFreeParser {
       } as AST.AssignmentStatement;
 
       if (isExport) stmt.isExport = true;
+
+      // 줄 끝의 NEWLINE 처리
+      this.match(TokenType.NEWLINE);
+
       return stmt;
     }
 
-    return {
+    const exprStmt = {
       type: 'ExpressionStatement',
       expression: expr,
       line: expr.line,
       column: expr.column,
     } as AST.ExpressionStatement;
+
+    // 줄 끝의 NEWLINE 처리
+    this.match(TokenType.NEWLINE);
+
+    return exprStmt;
   }
 
   /**
@@ -861,10 +879,23 @@ export class PyFreeParser {
     // 리터럴
     if (this.check(TokenType.NUMBER)) {
       const value = this.advance();
+      // 숫자 문자열을 숫자로 변환
+      let numValue: number;
+      if (typeof value.value === 'string') {
+        if (value.value.startsWith('0x')) {
+          numValue = parseInt(value.value, 16);
+        } else if (value.value.startsWith('0b')) {
+          numValue = parseInt(value.value.slice(2), 2);
+        } else {
+          numValue = parseFloat(value.value);
+        }
+      } else {
+        numValue = value.value;
+      }
       return {
         type: 'Literal',
         valueType: 'number',
-        value: value.value,
+        value: numValue,
         line: value.line,
         column: value.column,
       } as AST.Literal;
