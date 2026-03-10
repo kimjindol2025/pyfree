@@ -867,7 +867,7 @@ export class IRCompiler {
       }
     } else if (stmt.target.type === 'Indexing') {
       // 인덱싱 할당: a[i] = value
-      const objReg = this.compileExpression(stmt.target.obj);
+      const objReg = this.compileExpression(stmt.target.object);
       const idxReg = this.compileExpression(stmt.target.index);
       this.builder.emit(Opcode.INDEX_SET, [objReg, idxReg, valueReg]);
       this.freeRegister(objReg);
@@ -1229,18 +1229,18 @@ export class IRCompiler {
    */
   private compileDict(expr: any): number {
     const resultReg = this.allocRegister();
-    const entries = expr.entries || [];
+    const pairs = expr.pairs || [];  // 2026-03-10: 버그 수정 - entries → pairs
 
     // 간단한 구현: 각 키-값 쌍을 로드
     const keyRegs: number[] = [];
     const valueRegs: number[] = [];
 
-    for (const [key, value] of entries) {
-      keyRegs.push(this.compileExpression(key));
-      valueRegs.push(this.compileExpression(value));
+    for (const pair of pairs) {
+      keyRegs.push(this.compileExpression(pair.key));
+      valueRegs.push(this.compileExpression(pair.value));
     }
 
-    this.builder.emit(Opcode.BUILD_DICT, [resultReg, entries.length, ...keyRegs, ...valueRegs]);
+    this.builder.emit(Opcode.BUILD_DICT, [resultReg, pairs.length, ...keyRegs, ...valueRegs]);
 
     for (const reg of [...keyRegs, ...valueRegs]) {
       this.freeRegister(reg);
@@ -1254,7 +1254,7 @@ export class IRCompiler {
    */
   private compileIndexing(expr: any): number {
     const resultReg = this.allocRegister();
-    const objReg = this.compileExpression(expr.obj);
+    const objReg = this.compileExpression(expr.object);
     const idxReg = this.compileExpression(expr.index);
 
     this.builder.emit(Opcode.INDEX_GET, [resultReg, objReg, idxReg]);

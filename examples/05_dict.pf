@@ -1,0 +1,20 @@
+# 딕셔너리 기본 사용법
+
+# 1. 딕셔너리 생성 및 접근
+person = {"name": "Alice", "age": 30}
+print(person["name"])
+print(person["age"])
+
+# 2. 빈 딕셔너리 생성 후 키 추가
+config = {}
+config["host"] = "localhost"
+config["port"] = 8080
+print(config["host"])
+print(config["port"])
+
+# 3. 딕셔너리 값 수정
+data = {"x": 10, "y": 20}
+data["x"] = 100
+data["y"] = 200
+print(data["x"])
+print(data["y"])
