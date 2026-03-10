@@ -1288,7 +1288,7 @@ export class IRCompiler {
       if (actualArg.type === 'Literal') {
         // ✅ Phase 9: 리터럴 타입 변환
         let constValue = actualArg.value;
-        if (actualArg.valueType === 'number') {
+        if (actualArg.valueType === 'number' && typeof constValue === 'string') {
           if (constValue.startsWith('0x')) {
             constValue = parseInt(constValue, 16);
           } else if (constValue.startsWith('0o')) {

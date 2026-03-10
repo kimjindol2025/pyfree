@@ -1,0 +1,17 @@
+# Exception handling 테스트 (기본)
+# Phase 10 Step 5: Exception 구현
+
+# 기본 except (이미 구현되어 있을 수 있음)
+try:
+    x = 1 / 0
+except:
+    print("Division by zero caught")
+
+# 정상 실행
+try:
+    y = 10
+    print("No error")
+except:
+    print("This should not print")
+
+print("Program continues")
