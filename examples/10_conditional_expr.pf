@@ -1,0 +1,23 @@
+# Conditional expression (삼항 연산자) 테스트
+# Phase 10 Step 4c: IfExp 구현
+
+# 기본 조건식
+x = 10 if True else 20
+print(x)           # 10
+
+y = 10 if False else 20
+print(y)           # 20
+
+# 변수 사용
+a = 5
+result = "양수" if a > 0 else "음수"
+print(result)      # "양수"
+
+# 중첩된 조건식
+age = 25
+status = "미성년" if age < 18 else "성인"
+print(status)      # "성인"
+
+# 연산식과 함께
+val = 100 if True else 200
+print(val)         # 100

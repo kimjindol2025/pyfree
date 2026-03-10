@@ -1440,29 +1440,45 @@ export class IRCompiler {
    * 조건 표현식 컴파일
    */
   private compileConditionalExpression(expr: any): number {
-    const resultReg = this.allocRegister();
     const condReg = this.compileExpression(expr.condition);
 
+    // 조건이 거짓이면 else 분기로 점프
     const jumpIfFalseIdx = this.builder.getCurrentOffset();
     this.builder.emit(Opcode.JUMP_IF_FALSE, [condReg, 0]);
 
+    // True 분기: consequent을 평가
     const trueReg = this.compileExpression(expr.consequent);
-    this.builder.emit(Opcode.LOAD_CONST, [resultReg, this.builder.addConstant(true)]);
-    // TODO: 값 복사
 
+    // 임시 변수에 저장 (나중에 병합하기 위해)
+    const tmpVarName = `__cond_${Date.now()}_${Math.random()}`;
+    this.registerSymbol(tmpVarName, false, trueReg);
+    this.builder.emit(Opcode.STORE_FAST, [tmpVarName, trueReg]);
+
+    // True 분기 끝에서 else를 건너뜀
     const jumpOverIdx = this.builder.getCurrentOffset();
     this.builder.emit(Opcode.JUMP, [0]);
 
+    // False 분기 시작점 (jumpIfFalse 패치)
     this.builder.code[jumpIfFalseIdx].args[1] = this.builder.getCurrentOffset();
 
-    const falseReg = this.compileExpression(expr.alternate);
-    this.builder.emit(Opcode.LOAD_CONST, [resultReg, this.builder.addConstant(false)]);
+    // True 분기 결과 해제
+    this.freeRegister(trueReg);
 
+    // False 분기: alternate를 평가
+    const falseReg = this.compileExpression(expr.alternate);
+
+    // 같은 임시 변수에 저장
+    this.builder.emit(Opcode.STORE_FAST, [tmpVarName, falseReg]);
+
+    // Merge 포인트 (jumpOver 패치)
     this.builder.code[jumpOverIdx].args[0] = this.builder.getCurrentOffset();
 
     this.freeRegister(condReg);
-    this.freeRegister(trueReg);
     this.freeRegister(falseReg);
+
+    // 임시 변수에서 값을 로드
+    const resultReg = this.allocRegister();
+    this.builder.emit(Opcode.LOAD_FAST, [resultReg, tmpVarName]);
 
     return resultReg;
   }
