@@ -1,0 +1,119 @@
+# Phase 15.2a: Self-Hosting Lexer with Keywords
+# Phase 15.1 기반: 키워드 인식 추가
+
+# 키워드 목록
+KEYWORDS = ["def", "if", "else", "for", "while", "return", "True", "False", "and", "or", "not"]
+
+# 키워드 확인
+def is_keyword(word):
+    for kw in KEYWORDS:
+        if word == kw:
+            return True
+    return False
+
+# 숫자 스캔
+def scan_number(source, pos):
+    value = ""
+    while pos < len(source):
+        ch = source[pos]
+        if ch >= "0" and ch <= "9":
+            value = value + ch
+            pos = pos + 1
+        else:
+            break
+    return value
+
+# 식별자 스캔
+def scan_identifier(source, pos):
+    value = ""
+    while pos < len(source):
+        ch = source[pos]
+        if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9"):
+            value = value + ch
+            pos = pos + 1
+        else:
+            break
+    return value
+
+# 토큰 출력 (개선: 키워드 구분)
+def print_tokens(source):
+    pos = 0
+    token_count = 0
+
+    print("Source: " + source)
+    print("Tokens:")
+
+    while pos < len(source):
+        ch = source[pos]
+
+        # 공백 건너뛰기
+        if ch == " " or ch == "\t":
+            pos = pos + 1
+            continue
+
+        # 숫자 처리
+        if ch >= "0" and ch <= "9":
+            value = scan_number(source, pos)
+            print("  NUMBER: " + value)
+            pos = pos + len(value)
+            token_count = token_count + 1
+            continue
+
+        # 문자 처리 (식별자 또는 키워드)
+        if (ch >= "a" and ch <= "z") or (ch >= "A" and ch <= "Z") or ch == "_":
+            value = scan_identifier(source, pos)
+            # 키워드 확인
+            if is_keyword(value):
+                print("  KEYWORD: " + value)
+            else:
+                print("  IDENTIFIER: " + value)
+            pos = pos + len(value)
+            token_count = token_count + 1
+            continue
+
+        # 기호 처리
+        if ch == "=":
+            print("  ASSIGN: =")
+            token_count = token_count + 1
+            pos = pos + 1
+        elif ch == "(":
+            print("  LPAREN: (")
+            token_count = token_count + 1
+            pos = pos + 1
+        elif ch == ")":
+            print("  RPAREN: )")
+            token_count = token_count + 1
+            pos = pos + 1
+        elif ch == ":":
+            print("  COLON: :")
+            token_count = token_count + 1
+            pos = pos + 1
+        elif ch == ",":
+            print("  COMMA: ,")
+            token_count = token_count + 1
+            pos = pos + 1
+        else:
+            print("  SYMBOL: " + ch)
+            token_count = token_count + 1
+            pos = pos + 1
+
+    print("")
+    print("Total tokens: " + str(token_count))
+
+# 테스트
+print("=== Self-Hosting Lexer v2a: With Keywords ===")
+print("")
+
+print("Test 1: Basic assignment")
+print_tokens("x = 42")
+print("")
+
+print("Test 2: Keyword recognition")
+print_tokens("if x == 5:")
+print("")
+
+print("Test 3: Multiple keywords")
+print_tokens("def add(a, b): return a + b")
+print("")
+
+print("✅ Lexer v2a complete!")

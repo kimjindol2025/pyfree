@@ -1,0 +1,158 @@
+# Phase 15.2: Enhanced Self-Hosting Lexer
+# Phase 15.1 기반: 키워드 인식 추가
+
+# 키워드 목록
+keywords = ["def", "if", "else", "for", "while", "return", "True", "False", "and", "or", "not"]
+
+# 키워드 확인
+def is_keyword(word):
+    for kw in keywords:
+        if word == kw:
+            return True
+    return False
+
+# 숫자 스캔
+def scan_number(source, pos):
+    value = ""
+    while pos < len(source):
+        ch = source[pos]
+        if ch >= "0" and ch <= "9":
+            value = value + ch
+            pos = pos + 1
+        else:
+            break
+    return value
+
+# 식별자 스캔
+def scan_identifier(source, pos):
+    value = ""
+    while pos < len(source):
+        ch = source[pos]
+        if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9") or ch == "_":
+            value = value + ch
+            pos = pos + 1
+        else:
+            break
+    return value
+
+# 토큰 출력 (개선)
+def print_tokens(source):
+    pos = 0
+    token_count = 0
+
+    print("Source: " + source)
+    print("Tokens:")
+
+    while pos < len(source):
+        ch = source[pos]
+
+        # 공백 건너뛰기
+        if ch == " " or ch == "\t":
+            pos = pos + 1
+            continue
+
+        # 숫자 처리
+        if ch >= "0" and ch <= "9":
+            value = scan_number(source, pos)
+            print("  NUMBER: " + value)
+            pos = pos + len(value)
+            token_count = token_count + 1
+            continue
+
+        # 문자 처리 (식별자 또는 키워드)
+        if (ch >= "a" and ch <= "z") or (ch >= "A" and ch <= "Z") or ch == "_":
+            value = scan_identifier(source, pos)
+            if is_keyword(value):
+                print("  KEYWORD: " + value)
+            else:
+                print("  IDENTIFIER: " + value)
+            pos = pos + len(value)
+            token_count = token_count + 1
+            continue
+
+        # 2글자 연산자
+        if pos + 1 < len(source):
+            two_char = ch + source[pos + 1]
+            if two_char == "==":
+                print("  OPERATOR: ==")
+                pos = pos + 2
+                token_count = token_count + 1
+                continue
+            if two_char == "!=":
+                print("  OPERATOR: !=")
+                pos = pos + 2
+                token_count = token_count + 1
+                continue
+            if two_char == "<=":
+                print("  OPERATOR: <=")
+                pos = pos + 2
+                token_count = token_count + 1
+                continue
+            if two_char == ">=":
+                print("  OPERATOR: >=")
+                pos = pos + 2
+                token_count = token_count + 1
+                continue
+
+        # 1글자 기호 처리
+        if ch == "=":
+            print("  ASSIGN: =")
+            token_count = token_count + 1
+        elif ch == "(":
+            print("  LPAREN: (")
+            token_count = token_count + 1
+        elif ch == ")":
+            print("  RPAREN: )")
+            token_count = token_count + 1
+        elif ch == ":":
+            print("  COLON: :")
+            token_count = token_count + 1
+        elif ch == ",":
+            print("  COMMA: ,")
+            token_count = token_count + 1
+        elif ch == "+":
+            print("  OPERATOR: +")
+            token_count = token_count + 1
+        elif ch == "-":
+            print("  OPERATOR: -")
+            token_count = token_count + 1
+        elif ch == "*":
+            print("  OPERATOR: *")
+            token_count = token_count + 1
+        elif ch == "/":
+            print("  OPERATOR: /")
+            token_count = token_count + 1
+        else:
+            print("  SYMBOL: " + ch)
+            token_count = token_count + 1
+
+        pos = pos + 1
+
+    print("")
+    print("Total tokens: " + str(token_count))
+
+# 테스트 실행
+print("=== Enhanced Self-Hosting Lexer (Phase 15.2) ===")
+print("")
+
+# 테스트 1: 기본
+print("Test 1: Simple assignment")
+print_tokens("x = 42")
+print("")
+
+# 테스트 2: 키워드
+print("Test 2: With keyword")
+print_tokens("if x == 5:")
+print("")
+
+# 테스트 3: 함수 호출
+print("Test 3: Function call")
+print_tokens("add(a, b)")
+print("")
+
+# 테스트 4: 복합 연산자
+print("Test 4: Comparison operators")
+print_tokens("if a != b and c >= d:")
+print("")
+
+print("✅ Enhanced Lexer complete!")
