@@ -1492,13 +1492,45 @@ export class IRCompiler {
     // 버그 수정 (2026-03-08): 함수 호출 인자를 전용 영역에 배치
     // 이전: resultReg + 1 + i 위치에 배치 (겹칠 수 있음)
     // 수정: allocCallArgRegister()로 전용 영역(200+) 사용
-    // ✅ Phase 14 수정: 모든 인자를 compileExpression으로 처리하여 클로저 변수 캡처 가능
+    // ✅ Phase 14 수정: 클로저 변수 캡처 위해 compileExpression 사용하되, 타입별 최적화 복원
     const argRegs: number[] = [];
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
       const actualArg = arg.value || arg;
-      // 모든 표현식을 compileExpression으로 처리 (클로저/outerScopes 지원)
-      const argReg = this.compileExpression(actualArg);
+      let argReg: number;
+
+      // 타입별 최적화: 리터럴과 단순 식별자는 직접 처리 (성능)
+      if (actualArg.type === 'Literal') {
+        // 리터럴 최적화: 상수 풀에 직접 로드
+        let constValue = actualArg.value;
+        if (actualArg.valueType === 'number' && typeof constValue === 'string') {
+          if (constValue.startsWith('0x')) constValue = parseInt(constValue, 16);
+          else if (constValue.startsWith('0o')) constValue = parseInt(constValue, 8);
+          else if (constValue.startsWith('0b')) constValue = parseInt(constValue, 2);
+          else if (constValue.includes('.')) constValue = parseFloat(constValue);
+          else constValue = parseInt(constValue, 10);
+        }
+        argReg = this.allocCallArgRegister(i);
+        const constIdx = this.builder.addConstant(constValue);
+        this.builder.emit(Opcode.LOAD_CONST, [argReg, constIdx]);
+      } else if (actualArg.type === 'Identifier') {
+        // 식별자: 심볼 테이블 먼저 확인 (클로저/글로벌 지원)
+        const symbol = this.lookupSymbol(actualArg.name);
+        argReg = this.allocCallArgRegister(i);
+        if (symbol && !symbol.isGlobal && symbol.register !== undefined) {
+          this.builder.emit(Opcode.LOAD_FAST, [argReg, actualArg.name]);
+        } else if (symbol && symbol.isGlobal && symbol.globalName) {
+          this.builder.emit(Opcode.LOAD_GLOBAL, [argReg, symbol.globalName]);
+        } else {
+          // 미해결 참조: outerScopes 탐색 (클로저)
+          const tempReg = this.compileExpression(actualArg);
+          argReg = tempReg;
+        }
+      } else {
+        // 복잡한 표현식: compileExpression으로 처리
+        argReg = this.compileExpression(actualArg);
+      }
+
       argRegs.push(argReg);
     }
 
@@ -1506,6 +1538,9 @@ export class IRCompiler {
     // 이전: CALL만 인자 레지스터를 전달하지 않았음
     // 수정: argRegs를 CALL 명령어에 포함
     this.builder.emit(Opcode.CALL, [resultReg, funcReg, args.length, ...argRegs]);
+
+    // ✅ Phase 14 버그 수정: argRegs 메모리 누수 해결
+    argRegs.forEach(r => this.freeRegister(r));
     this.freeRegister(funcReg);
 
     return resultReg;

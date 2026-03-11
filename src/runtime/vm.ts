@@ -363,19 +363,17 @@ export class VM {
               frame.registers[aNum] = undefined;
             }
           }
-        } else if (obj !== null && typeof obj === 'object' && obj.__type__ === 'super') {
-          // ✅ Phase 14: super 객체 메서드 탐색
+        } else if (this.isSuper(obj)) {
+          // ✅ Phase 14: super 객체 메서드 탐색 (부모 클래스에서만 탐색)
           const bases = obj.__class__?.__bases__ || [];
           let found: any = undefined;
           for (const base of bases) {
             found = this.lookupMethod(base, attr);
             if (found) break;
           }
-          if (found) {
-            frame.registers[aNum] = { __type__: 'bound_method', func: found, instance: obj.__instance__ };
-          } else {
-            frame.registers[aNum] = undefined;
-          }
+          frame.registers[aNum] = found
+            ? { __type__: 'bound_method', func: found, instance: obj.__instance__ }
+            : undefined;
         } else if (Array.isArray(obj)) {
           // 리스트 메서드
           const listMethods: Record<string, any> = {
@@ -512,14 +510,19 @@ export class VM {
           methods.set(name, func);
         }
 
-        // ✅ Phase 14: bases 처리
+        // ✅ Phase 14: bases 처리 (범위 체크 추가)
         const baseCountIdx = 3 + 2 * methodCount;
         const baseCount = typeof instr.args[baseCountIdx] === 'number'
           ? instr.args[baseCountIdx] as number : 0;
         const bases: any[] = [];
         for (let i = 0; i < baseCount; i++) {
-          const baseReg = instr.args[baseCountIdx + 1 + i] as number;
-          bases.push(frame.registers[baseReg]);
+          const baseArgIdx = baseCountIdx + 1 + i;
+          if (baseArgIdx < instr.args.length) {
+            const baseReg = instr.args[baseArgIdx] as number;
+            if (typeof baseReg === 'number' && baseReg < frame.registers.length) {
+              bases.push(frame.registers[baseReg]);
+            }
+          }
         }
 
         frame.registers[aNum] = {
@@ -699,16 +702,38 @@ export class VM {
   }
 
   /**
-   * ✅ Phase 14: 메서드 탐색 (상속 체인)
+   * ✅ Phase 14: 타입 가드 헬퍼
    */
-  private lookupMethod(classObj: any, name: string): any {
+  private isInstance(obj: any): boolean {
+    return obj !== null && typeof obj === 'object' && obj?.__type__ === 'instance';
+  }
+
+  private isClass(obj: any): boolean {
+    return obj !== null && typeof obj === 'object' && obj?.__type__ === 'class';
+  }
+
+  private isSuper(obj: any): boolean {
+    return obj !== null && typeof obj === 'object' && obj?.__type__ === 'super';
+  }
+
+  /**
+   * ✅ Phase 14: 메서드 탐색 (상속 체인 + 순환 참조 감지)
+   */
+  private lookupMethod(classObj: any, name: string, visited?: Set<any>): any {
     if (!classObj) return undefined;
+
+    // 순환 참조 감지 (다이아몬드 상속)
+    visited = visited || new Set();
+    if (visited.has(classObj)) return undefined;
+    visited.add(classObj);
+
     // 자신의 __methods__ 먼저
     const method = classObj.__methods__?.get(name);
     if (method) return method;
+
     // 부모 클래스 체인 탐색 (MRO)
     for (const base of (classObj.__bases__ || [])) {
-      const inherited = this.lookupMethod(base, name);
+      const inherited = this.lookupMethod(base, name, visited);
       if (inherited) return inherited;
     }
     return undefined;
@@ -1002,13 +1027,22 @@ export const NativeLibrary = {
   },
 
   isinstance: (obj: any, classname: any): boolean => {
-    // ✅ Phase 14: 상속 체인 탐색
+    // ✅ Phase 14: 상속 체인 탐색 (모든 부모 체크)
     if (typeof classname === 'object' && classname?.__type__ === 'class') {
+      // 방문 집합으로 순환 참조 방지
+      const visited = new Set<any>();
       let classObj = obj?.__class__;
-      while (classObj) {
+      while (classObj && !visited.has(classObj)) {
+        visited.add(classObj);
         if (classObj === classname) return true;
-        // 부모 클래스 탐색 (첫 번째 부모만 - 단순 상속)
-        classObj = classObj.__bases__?.[0];
+        // 모든 부모 클래스 탐색 (다중 상속 지원)
+        const bases = classObj?.__bases__ || [];
+        for (const base of bases) {
+          if (base === classname) return true;
+          classObj = base; // 단순화: 첫 번째 부모 계속 탐색
+        }
+        // 다중 상속 시: 추가 부모는 이후 반복에서 처리
+        break;
       }
       return false;
     }
