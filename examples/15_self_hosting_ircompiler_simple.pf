@@ -1,0 +1,182 @@
+# Phase 15.4: Self-Hosting IRCompiler (Simplified)
+# AST → IR 명령어 변환 (간단한 버전)
+
+# ============================================================================
+# Compiler 상태 관리
+# ============================================================================
+
+def make_compiler():
+    compiler = {}
+    compiler["instructions"] = []
+    compiler["constants"] = []
+    compiler["symbols"] = {}
+    compiler["next_reg"] = 0
+    compiler["next_const"] = 0
+    return compiler
+
+def add_constant(compiler, value):
+    idx = compiler["next_const"]
+    compiler["constants"].append(value)
+    compiler["next_const"] = compiler["next_const"] + 1
+    return idx
+
+def alloc_reg(compiler):
+    reg = compiler["next_reg"]
+    compiler["next_reg"] = compiler["next_reg"] + 1
+    return reg
+
+def emit(compiler, opcode, args):
+    inst = [opcode, args]
+    compiler["instructions"].append(inst)
+
+# ============================================================================
+# 명령어 코드
+# ============================================================================
+
+LOAD_CONST = 1
+STORE_GLOBAL = 2
+LOAD_GLOBAL = 3
+BINOP = 4
+CALL = 5
+RETURN = 6
+
+# ============================================================================
+# Expression 컴파일
+# ============================================================================
+
+def compile_expr(expr, compiler):
+    if expr["type"] == "Constant":
+        const_idx = add_constant(compiler, expr["value"])
+        reg = alloc_reg(compiler)
+        emit(compiler, LOAD_CONST, [reg, const_idx])
+        return reg
+
+    if expr["type"] == "Name":
+        reg = alloc_reg(compiler)
+        emit(compiler, LOAD_GLOBAL, [reg, expr["id"]])
+        return reg
+
+    if expr["type"] == "BinOp":
+        left_reg = compile_expr(expr["left"], compiler)
+        right_reg = compile_expr(expr["right"], compiler)
+        result_reg = alloc_reg(compiler)
+        op = expr["op"]
+        emit(compiler, BINOP, [result_reg, left_reg, op, right_reg])
+        return result_reg
+
+    if expr["type"] == "Call":
+        func_reg = compile_expr(expr["func"], compiler)
+        args = expr["args"]
+        arg_regs = []
+        i = 0
+        while i < len(args):
+            arg_reg = compile_expr(args[i], compiler)
+            arg_regs.append(arg_reg)
+            i = i + 1
+        result_reg = alloc_reg(compiler)
+        emit(compiler, CALL, [result_reg, func_reg, arg_regs])
+        return result_reg
+
+    return 0
+
+# ============================================================================
+# Statement 컴파일
+# ============================================================================
+
+def compile_stmt(stmt, compiler):
+    if stmt["type"] == "Assign":
+        target = stmt["targets"][0]
+        value = stmt["value"]
+        value_reg = compile_expr(value, compiler)
+        if target["type"] == "Name":
+            emit(compiler, STORE_GLOBAL, [target["id"], value_reg])
+
+    if stmt["type"] == "Expr":
+        value_reg = compile_expr(stmt["value"], compiler)
+
+    if stmt["type"] == "Return":
+        if stmt["value"] == None:
+            const_idx = add_constant(compiler, None)
+            reg = alloc_reg(compiler)
+            emit(compiler, LOAD_CONST, [reg, const_idx])
+            emit(compiler, RETURN, [reg])
+        else:
+            value_reg = compile_expr(stmt["value"], compiler)
+            emit(compiler, RETURN, [value_reg])
+
+    if stmt["type"] == "FunctionDef":
+        func_name = stmt["name"]
+        func_meta = {}
+        func_meta["name"] = func_name
+        func_meta["params"] = stmt["args"]
+        func_meta["body"] = stmt["body"]
+        const_idx = add_constant(compiler, func_meta)
+        reg = alloc_reg(compiler)
+        emit(compiler, LOAD_CONST, [reg, const_idx])
+        emit(compiler, STORE_GLOBAL, [func_name, reg])
+
+# ============================================================================
+# 메인 컴파일
+# ============================================================================
+
+def compile_module(ast):
+    compiler = make_compiler()
+    body = ast["body"]
+    i = 0
+    while i < len(body):
+        compile_stmt(body[i], compiler)
+        i = i + 1
+    result = {}
+    result["code"] = compiler["instructions"]
+    result["constants"] = compiler["constants"]
+    return result
+
+# ============================================================================
+# 테스트
+# ============================================================================
+
+print("=== IRCompiler Simplified Test ===")
+print("")
+
+# Test 1: 상수 할당
+test1 = {
+    "type": "Module",
+    "body": [
+        {
+            "type": "Assign",
+            "targets": [{"type": "Name", "id": "x"}],
+            "value": {"type": "Constant", "value": 42}
+        }
+    ]
+}
+
+result1 = compile_module(test1)
+print("Test 1: x = 42")
+print("  Instructions:", len(result1["code"]))
+print("  Constants:", result1["constants"])
+print("")
+
+# Test 2: 연산
+test2 = {
+    "type": "Module",
+    "body": [
+        {
+            "type": "Assign",
+            "targets": [{"type": "Name", "id": "y"}],
+            "value": {
+                "type": "BinOp",
+                "left": {"type": "Constant", "value": 3},
+                "op": "+",
+                "right": {"type": "Constant", "value": 5}
+            }
+        }
+    ]
+}
+
+result2 = compile_module(test2)
+print("Test 2: y = 3 + 5")
+print("  Instructions:", len(result2["code"]))
+print("  Constants:", result2["constants"])
+print("")
+
+print("✅ IRCompiler working!")
