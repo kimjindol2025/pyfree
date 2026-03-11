@@ -1,0 +1,19 @@
+class Shape:
+    def __init__(self, color):
+        self.color = color
+
+    def describe(self):
+        return self.color + " shape"
+
+class Circle(Shape):
+    def __init__(self, color, radius):
+        super(Circle, self).__init__(color)
+        self.radius = radius
+
+    def describe(self):
+        return super(Circle, self).describe() + " circle r=" + str(self.radius)
+
+c = Circle("red", 5)
+print(c.describe())
+print(c.color)
+print(c.radius)

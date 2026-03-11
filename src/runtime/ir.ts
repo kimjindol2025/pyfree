@@ -717,6 +717,11 @@ export class IRCompiler {
     const className = stmt.name;
     const classReg = this.allocRegister();
 
+    // ✅ Phase 14: 메서드 컴파일 전에 클래스 이름을 글로벌로 미리 등록
+    // 이렇게 하면 메서드 내에서 super(ClassName, self) 같은 코드가 클래스 이름을 찾을 수 있음
+    const globalName = this.builder.addGlobal(className);
+    this.registerSymbol(className, true, undefined, globalName);
+
     // 메서드 목록 컴파일
     const methodPairs: (number | string)[] = [];
     for (const item of (stmt.body || [])) {
@@ -729,13 +734,27 @@ export class IRCompiler {
     }
 
     const classNameIdx = this.builder.addConstant(className);
+
+    // ✅ Phase 14: bases 로드
+    const baseRegs: number[] = [];
+    for (const base of (stmt.bases || [])) {
+      const baseReg = this.compileExpression(base);
+      baseRegs.push(baseReg);
+    }
+
+    // MAKE_CLASS [dstReg, classNameIdx, methodCount, name0, func0..., baseCount, base0Reg...]
     this.builder.emit(Opcode.MAKE_CLASS, [
-      classReg, classNameIdx, methodPairs.length / 2, ...methodPairs
+      classReg,
+      classNameIdx,
+      methodPairs.length / 2,
+      ...methodPairs,
+      baseRegs.length,
+      ...baseRegs,
     ]);
 
-    const globalName = this.builder.addGlobal(className);
+    baseRegs.forEach(r => this.freeRegister(r));
+
     this.builder.emit(Opcode.STORE_GLOBAL, [globalName, classReg]);
-    this.registerSymbol(className, true, undefined, globalName);
     this.freeRegister(classReg);
   }
 
@@ -1473,68 +1492,13 @@ export class IRCompiler {
     // 버그 수정 (2026-03-08): 함수 호출 인자를 전용 영역에 배치
     // 이전: resultReg + 1 + i 위치에 배치 (겹칠 수 있음)
     // 수정: allocCallArgRegister()로 전용 영역(200+) 사용
+    // ✅ Phase 14 수정: 모든 인자를 compileExpression으로 처리하여 클로저 변수 캡처 가능
     const argRegs: number[] = [];
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
       const actualArg = arg.value || arg;
-
-      let argReg: number;
-
-      // 각 인자 타입별로 적절한 레지스터에 값을 로드
-      if (actualArg.type === 'Literal') {
-        // ✅ Phase 9: 리터럴 타입 변환
-        let constValue = actualArg.value;
-        if (actualArg.valueType === 'number' && typeof constValue === 'string') {
-          if (constValue.startsWith('0x')) {
-            constValue = parseInt(constValue, 16);
-          } else if (constValue.startsWith('0o')) {
-            constValue = parseInt(constValue, 8);
-          } else if (constValue.startsWith('0b')) {
-            constValue = parseInt(constValue, 2);
-          } else if (constValue.includes('.')) {
-            constValue = parseFloat(constValue);
-          } else {
-            constValue = parseInt(constValue, 10);
-          }
-        }
-        // 리터럴은 상수 영역 할당 (200+ 범위)
-        argReg = this.allocCallArgRegister(i);
-        const constIdx = this.builder.addConstant(constValue);
-        this.builder.emit(Opcode.LOAD_CONST, [argReg, constIdx]);
-      } else if (actualArg.type === 'Identifier') {
-        // 식별자는 기존 레지스터에서 로드
-        const symbol = this.lookupSymbol(actualArg.name);
-        argReg = this.allocCallArgRegister(i);
-
-        if (symbol && !symbol.isGlobal && symbol.register !== undefined) {
-          // 로컬 변수
-          this.builder.emit(Opcode.LOAD_FAST, [argReg, actualArg.name]);
-        } else if (symbol && symbol.isGlobal && symbol.globalName) {
-          // 전역 변수
-          this.builder.emit(Opcode.LOAD_GLOBAL, [argReg, symbol.globalName]);
-        } else {
-          // 미해결 참조
-          this.builder.emit(Opcode.LOAD_NONE, [argReg]);
-        }
-      } else {
-        // 🔴 버그 수정 (2026-03-10): 복잡한 표현식
-        // 이전: ADD + 0을 사용해 값을 복사 → 배열/객체는 NaN
-        // 수정: tempReg에서 계산 후 MOVE로 복사 (또는 직접 사용)
-        const tempReg = this.compileExpression(actualArg);
-        argReg = this.allocCallArgRegister(i);
-
-        // 간단한 복사: 임시 변수에 저장
-        if (argReg !== tempReg) {
-          // 값을 직접 대입 (무조건 안전한 방법)
-          // IR에는 MOVE가 없으므로, tempReg를 그냥 CALL에 넘김
-          argReg = tempReg;
-          // 이미 tempReg에 값이 있으므로 추가 작업 불필요
-        } else {
-          // 우연히 같은 레지스터면 그냥 사용
-        }
-        // tempReg는 나중에 free 하지 않음 (CALL 전까지 살아있어야 함)
-      }
-
+      // 모든 표현식을 compileExpression으로 처리 (클로저/outerScopes 지원)
+      const argReg = this.compileExpression(actualArg);
       argRegs.push(argReg);
     }
 

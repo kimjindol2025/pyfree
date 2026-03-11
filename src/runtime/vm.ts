@@ -355,12 +355,26 @@ export class VM {
           if (attr in obj && attr !== '__type__' && attr !== '__class__') {
             frame.registers[aNum] = obj[attr];
           } else {
-            const method = obj.__class__?.__methods__?.get(attr);
+            // ✅ Phase 14: 상속 체인 탐색
+            const method = this.lookupMethod(obj.__class__, attr);
             if (method) {
               frame.registers[aNum] = { __type__: 'bound_method', func: method, instance: obj };
             } else {
               frame.registers[aNum] = undefined;
             }
+          }
+        } else if (obj !== null && typeof obj === 'object' && obj.__type__ === 'super') {
+          // ✅ Phase 14: super 객체 메서드 탐색
+          const bases = obj.__class__?.__bases__ || [];
+          let found: any = undefined;
+          for (const base of bases) {
+            found = this.lookupMethod(base, attr);
+            if (found) break;
+          }
+          if (found) {
+            frame.registers[aNum] = { __type__: 'bound_method', func: found, instance: obj.__instance__ };
+          } else {
+            frame.registers[aNum] = undefined;
           }
         } else if (Array.isArray(obj)) {
           // 리스트 메서드
@@ -498,7 +512,22 @@ export class VM {
           methods.set(name, func);
         }
 
-        frame.registers[aNum] = { __type__: 'class', __name__: className, __methods__: methods };
+        // ✅ Phase 14: bases 처리
+        const baseCountIdx = 3 + 2 * methodCount;
+        const baseCount = typeof instr.args[baseCountIdx] === 'number'
+          ? instr.args[baseCountIdx] as number : 0;
+        const bases: any[] = [];
+        for (let i = 0; i < baseCount; i++) {
+          const baseReg = instr.args[baseCountIdx + 1 + i] as number;
+          bases.push(frame.registers[baseReg]);
+        }
+
+        frame.registers[aNum] = {
+          __type__: 'class',
+          __name__: className,
+          __methods__: methods,
+          __bases__: bases,    // ✅ Phase 14: 부모 클래스 목록
+        };
         break;
       }
     }
@@ -582,7 +611,8 @@ export class VM {
       const instance: any = { __type__: 'instance', __class__: func };
       frame.registers[resultReg] = instance;
 
-      const initMethod = func.__methods__?.get('__init__');
+      // ✅ Phase 14: 상속 체인에서 __init__ 탐색
+      const initMethod = this.lookupMethod(func, '__init__');
       if (initMethod) {
         const newFrame: Frame = {
           function: initMethod,
@@ -666,6 +696,22 @@ export class VM {
       // 폴백: 이전 방식 (호환성)
       this.frameStack[this.frameStack.length - 1].registers[0] = returnValue;
     }
+  }
+
+  /**
+   * ✅ Phase 14: 메서드 탐색 (상속 체인)
+   */
+  private lookupMethod(classObj: any, name: string): any {
+    if (!classObj) return undefined;
+    // 자신의 __methods__ 먼저
+    const method = classObj.__methods__?.get(name);
+    if (method) return method;
+    // 부모 클래스 체인 탐색 (MRO)
+    for (const base of (classObj.__bases__ || [])) {
+      const inherited = this.lookupMethod(base, name);
+      if (inherited) return inherited;
+    }
+    return undefined;
   }
 
   /**
@@ -947,10 +993,24 @@ export const NativeLibrary = {
   },
 
   // 객체 검사
+  // ✅ Phase 14: super() 함수
+  super: (classObj: any, instance: any): any => {
+    if (typeof classObj === 'object' && classObj?.__type__ === 'class') {
+      return { __type__: 'super', __class__: classObj, __instance__: instance };
+    }
+    return null;
+  },
+
   isinstance: (obj: any, classname: any): boolean => {
-    // ✅ Phase 13: 클래스 객체 지원
+    // ✅ Phase 14: 상속 체인 탐색
     if (typeof classname === 'object' && classname?.__type__ === 'class') {
-      return typeof obj === 'object' && obj?.__class__ === classname;
+      let classObj = obj?.__class__;
+      while (classObj) {
+        if (classObj === classname) return true;
+        // 부모 클래스 탐색 (첫 번째 부모만 - 단순 상속)
+        classObj = classObj.__bases__?.[0];
+      }
+      return false;
     }
     // 기존 로직: 문자열 클래스명
     const type = NativeLibrary.type(obj);
