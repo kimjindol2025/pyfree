@@ -1,0 +1,76 @@
+# Phase 15.1: Self-Hosting Lexer (PyFree) - 최소 버전
+
+# 숫자 스캔 함수
+def scan_number(source, pos):
+    value = ""
+    while pos < len(source):
+        ch = source[pos]
+        if ch >= "0" and ch <= "9":
+            value = value + ch
+            pos = pos + 1
+        else:
+            break
+    return value
+
+# 문자 스캔 함수
+def scan_identifier(source, pos):
+    value = ""
+    while pos < len(source):
+        ch = source[pos]
+        if (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9"):
+            value = value + ch
+            pos = pos + 1
+        else:
+            break
+    return value
+
+# 토큰 출력
+def print_tokens(source):
+    pos = 0
+    token_count = 0
+
+    print("Source: " + source)
+    print("Tokens:")
+
+    while pos < len(source):
+        ch = source[pos]
+
+        # 공백 건너뛰기
+        if ch == " " or ch == "\t":
+            pos = pos + 1
+            continue
+
+        # 숫자 처리
+        if ch >= "0" and ch <= "9":
+            value = scan_number(source, pos)
+            print("  NUMBER: " + value)
+            pos = pos + len(value)
+            token_count = token_count + 1
+            continue
+
+        # 문자 처리
+        if (ch >= "a" and ch <= "z") or (ch >= "A" and ch <= "Z"):
+            value = scan_identifier(source, pos)
+            print("  IDENTIFIER: " + value)
+            pos = pos + len(value)
+            token_count = token_count + 1
+            continue
+
+        # 기호 처리
+        if ch == "=":
+            print("  ASSIGN: =")
+            token_count = token_count + 1
+        else:
+            print("  SYMBOL: " + ch)
+
+        pos = pos + 1
+
+    print("")
+    print("Total tokens: " + str(token_count))
+
+# 테스트 실행
+print("=== Self-Hosting Lexer Test ===")
+print("")
+print_tokens("x = 42")
+print("")
+print("✅ Lexer complete!")
