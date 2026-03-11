@@ -1,0 +1,33 @@
+# PyFree append 함수 테스트
+
+def main():
+    print("=== Append 테스트 ===")
+
+    # 1. 빈 리스트 생성
+    items = []
+    print("빈 리스트 생성")
+    print("items 길이: " + str(len(items)))
+    print()
+
+    # 2. append 사용
+    print("items.append('hello') 실행")
+    items.append("hello")
+    print("items 길이: " + str(len(items)))
+    print()
+
+    # 3. 여러 append
+    print("items.append('world') 실행")
+    items.append("world")
+    print("items 길이: " + str(len(items)))
+    print()
+
+    # 4. 반복문으로 출력
+    print("items 내용:")
+    i = 0
+    while i < len(items):
+        print("  [" + str(i) + "]: " + items[i])
+        i = i + 1
+
+    print("완료")
+
+main()
