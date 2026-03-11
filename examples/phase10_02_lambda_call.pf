@@ -1,0 +1,2 @@
+result = (lambda a, b: a + b)(3, 4)
+print(result)

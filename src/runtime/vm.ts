@@ -28,6 +28,7 @@ interface Frame {
   returnValue?: PyFreeValue;
   returnResultReg?: number;        // 반환값 저장할 호출자 레지스터
   callerRegisters?: PyFreeValue[]; // 호출자 레지스터 배열 참조
+  closureEnv?: Map<string, PyFreeValue>; // ✅ Phase 10: 클로저 환경
 }
 
 /**
@@ -142,6 +143,18 @@ export class VM {
 
       case Opcode.STORE_FAST:
         frame.locals.set(String(a), frame.registers[bNum]);
+        break;
+
+      // ✅ Phase 10: 클로저 변수
+      case Opcode.LOAD_DEREF:
+        const varName = String(b);
+        frame.registers[aNum] = frame.closureEnv?.get(varName)
+          ?? this.globals.get(varName)
+          ?? null;
+        break;
+
+      case Opcode.STORE_DEREF:
+        frame.closureEnv?.set(String(a), frame.registers[bNum]);
         break;
 
       // 산술 연산
@@ -413,6 +426,16 @@ export class VM {
       // 파라미터 전달
       for (let i = 0; i < argValues.length && i < func.paramCount; i++) {
         newFrame.locals.set(func.paramNames[i], argValues[i]);
+      }
+
+      // ✅ Phase 10: 클로저 환경 바인딩
+      if (func.freeVars && func.freeVars.length > 0) {
+        const closureEnv = new Map<string, PyFreeValue>();
+        for (const varName of func.freeVars) {
+          const val = frame.closureEnv?.get(varName) ?? this.globals.get(varName);
+          closureEnv.set(varName, val);
+        }
+        newFrame.closureEnv = closureEnv;
       }
 
       this.frameStack.push(newFrame);

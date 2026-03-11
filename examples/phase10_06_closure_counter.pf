@@ -1,0 +1,10 @@
+def make_counter():
+    count = 0
+    def increment():
+        return count + 1
+    return increment
+
+counter = make_counter()
+print(counter())
+print(counter())
+print(counter())

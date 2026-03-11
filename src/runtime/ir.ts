@@ -83,6 +83,8 @@ export enum Opcode {
   // 저장
   STORE_GLOBAL = 'STORE_GLOBAL',  // 전역 변수 저장: globals[a] = r[b]
   STORE_FAST = 'STORE_FAST',      // 지역 변수 저장: locals[a] = r[b]
+  LOAD_DEREF = 'LOAD_DEREF',      // 클로저 변수 로드: r[a] = closure[b]
+  STORE_DEREF = 'STORE_DEREF',    // 클로저 변수 저장: closure[a] = r[b]
 
   // 산술 연산
   ADD = 'ADD',                    // 더하기: r[a] = r[b] + r[c]
@@ -165,6 +167,7 @@ export interface IRFunction {
   localCount: number;
   code: Instruction[];
   constants: any[];        // 함수 전용 상수 풀
+  freeVars: string[];      // 캡처한 외부 변수 (클로저)
   isAsync: boolean;
   paramNames: string[];
 }
@@ -556,13 +559,14 @@ export class IRCompiler {
     const funcConstants = funcBuilder.getConstants();
     this.builderStack.pop();  // funcBuilder 제거 (메인 빌더로 복원)
 
-    // Step 5: IRFunction 객체 생성 (코드 + 상수 포함!)
+    // Step 5: IRFunction 객체 생성 (코드 + 상수 + freeVars 포함!)
     const irFunction: IRFunction = {
       name: funcName,
       paramCount,
       localCount: this.localVars.length,
       code: funcCode,
       constants: funcConstants,  // 함수 전용 상수
+      freeVars: [],              // Phase 10: 클로저 변수 (향후 분석)
       isAsync: stmt.isAsync || false,
       paramNames,
     };
@@ -578,6 +582,40 @@ export class IRCompiler {
     this.builder.emit(Opcode.LOAD_CONST, [funcReg, funcConstIdx]);
     this.builder.emit(Opcode.STORE_GLOBAL, [funcName, funcReg]);
     this.freeRegister(funcReg);
+
+    // ✅ Step 7: 데코레이터 처리 (역순 적용 — Python 규칙)
+    if (stmt.decorators && stmt.decorators.length > 0) {
+      const decorators = [...stmt.decorators].reverse();
+      for (const dec of decorators) {
+        // 현재 함수 로드
+        const currentFuncReg = this.allocRegister();
+        this.builder.emit(Opcode.LOAD_GLOBAL, [currentFuncReg, funcName]);
+
+        // 데코레이터 함수 로드
+        const decReg = this.allocRegister();
+        this.builder.emit(Opcode.LOAD_GLOBAL, [decReg, dec.name]);
+
+        // 데코레이터 인자 (있으면)
+        const callArgRegs: number[] = [currentFuncReg];
+        for (const arg of (dec.args || [])) {
+          const argReg = this.compileExpression(arg);
+          callArgRegs.push(argReg);
+        }
+
+        // 데코레이터 호출: result = decorator(func, ...args)
+        const resultReg = this.allocRegister();
+        this.builder.emit(Opcode.CALL, [resultReg, decReg, callArgRegs.length, ...callArgRegs]);
+
+        // 결과를 다시 함수 이름으로 저장
+        this.builder.emit(Opcode.STORE_GLOBAL, [funcName, resultReg]);
+
+        // 레지스터 해제
+        this.freeRegister(currentFuncReg);
+        this.freeRegister(decReg);
+        callArgRegs.slice(1).forEach(r => this.freeRegister(r));
+        this.freeRegister(resultReg);
+      }
+    }
 
     // 심볼 테이블에 등록 (전역 함수)
     this.registerSymbol(funcName, true, undefined, funcName);
@@ -1604,12 +1642,51 @@ export class IRCompiler {
   }
 
   /**
-   * 람다 컴파일
+   * ✅ Phase 10: 람다 컴파일 — IRFunction 생성
    */
   private compileLambda(expr: any): number {
+    const paramNames = expr.params ? expr.params.map((p: any) => p.name) : [];
+    const paramCount = paramNames.length;
+
+    // 1. 함수 전용 빌더 생성 (Phase 9와 동일 패턴)
+    const funcBuilder = new IRBuilder();
+    this.builderStack.push(funcBuilder);
+
+    const oldLocalVars = this.localVars;
+    const oldSymbols = new Map(this.symbols);
+    this.localVars = [...paramNames];
+    this.symbols.clear();
+    paramNames.forEach((name: string, index: number) => {
+      this.registerSymbol(name, false, index);
+    });
+
+    // 2. body 단일 표현식 컴파일 → RETURN
+    const bodyReg = this.compileExpression(expr.body);
+    funcBuilder.emit(Opcode.RETURN, [bodyReg]);
+    this.freeRegister(bodyReg);
+
+    // 3. 코드 캡처 + 빌더 복원
+    const funcCode = [...funcBuilder.code];
+    const funcConstants = funcBuilder.getConstants();
+    this.builderStack.pop();
+    this.symbols = oldSymbols;
+    this.localVars = oldLocalVars;
+
+    // 4. IRFunction 생성 → 상수 풀 등록
+    const irFunction: IRFunction = {
+      name: '<lambda>',
+      paramCount,
+      localCount: paramCount,
+      code: funcCode,
+      constants: funcConstants,
+      freeVars: [],
+      isAsync: false,
+      paramNames,
+    };
+
+    const funcConstIdx = this.builder.addConstant(irFunction);
     const resultReg = this.allocRegister();
-    // 간단한 구현: 람다를 함수처럼 처리
-    this.builder.emit(Opcode.LOAD_NONE, [resultReg]);
+    this.builder.emit(Opcode.LOAD_CONST, [resultReg, funcConstIdx]);
     return resultReg;
   }
 
