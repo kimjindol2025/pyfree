@@ -1,0 +1,24 @@
+# Gogs AI 아키텍트 (PyFree) — 간단한 테스트
+
+def greet():
+    print("hello from pyfree")
+
+def create_knowledge_base():
+    kb = {}
+    kb["files"] = []
+    kb["chunks"] = []
+    return kb
+
+def main():
+    print("=== Gogs AI 아키텍트 (PyFree 버전) ===")
+    print()
+
+    greet()
+    print()
+
+    kb = create_knowledge_base()
+    print("지식베이스 생성 완료")
+    print("파일:", kb["files"])
+    print("청크:", kb["chunks"])
+
+main()
