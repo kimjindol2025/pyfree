@@ -1,0 +1,7 @@
+d = {"a": 1}
+try:
+    print(d["a"])    # 1
+    print(d["c"])    # KeyError 발생
+except:
+    print("KeyError caught")   # 출력
+print("done")        # done

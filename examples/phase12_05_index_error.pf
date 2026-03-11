@@ -1,0 +1,6 @@
+nums = [1, 2, 3]
+try:
+    print(nums[0])   # 1
+    print(nums[10])  # IndexError 발생
+except:
+    print("IndexError caught") # 출력

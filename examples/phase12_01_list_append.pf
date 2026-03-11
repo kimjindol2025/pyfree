@@ -1,0 +1,6 @@
+items = []
+items.append("hello")
+items.append("world")
+print(len(items))    # 2
+print(items[0])      # hello
+print(items[1])      # world

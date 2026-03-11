@@ -95,7 +95,19 @@ export class VM {
       const instr = frame.code[frame.pc];
       frame.pc++;
 
-      this.executeInstruction(instr, frame);
+      try {
+        this.executeInstruction(instr, frame);
+      } catch (e: any) {
+        // Runtime exception: find handler
+        if (this.handlerStack.length > 0) {
+          const handler = this.handlerStack.pop()!;
+          // Store exception as global __exception__
+          this.globals.set('__exception__', e instanceof Error ? e.message : String(e));
+          frame.pc = handler.offset;
+        } else {
+          throw e;
+        }
+      }
     }
   }
 
@@ -189,6 +201,9 @@ export class VM {
         break;
 
       case Opcode.DIV:
+        if (frame.registers[cNum] === 0) {
+          throw new Error('ZeroDivisionError: division by zero');
+        }
         frame.registers[aNum] = frame.registers[bNum] / frame.registers[cNum];
         break;
 
@@ -302,17 +317,95 @@ export class VM {
         this.buildDict(frame, aNum, bNum, instr.args);
         break;
 
-      case Opcode.INDEX_GET:
-        frame.registers[aNum] = frame.registers[bNum][frame.registers[cNum]];
+      case Opcode.INDEX_GET: {
+        const obj = frame.registers[bNum];
+        const key = frame.registers[cNum];
+
+        if (Array.isArray(obj)) {
+          const idx = Number(key);
+          if (idx >= 0 && idx < obj.length) {
+            frame.registers[aNum] = obj[idx];
+          } else {
+            this.raiseException({ type: 'IndexError', message: `list index out of range`, args: [key] });
+          }
+        } else if (typeof obj === 'string') {
+          frame.registers[aNum] = obj[Number(key)];
+        } else if (obj !== null && typeof obj === 'object') {
+          if (String(key) in obj) {
+            frame.registers[aNum] = obj[String(key)];
+          } else {
+            this.raiseException({ type: 'KeyError', message: String(key), args: [key] });
+          }
+        } else {
+          frame.registers[aNum] = obj?.[key];
+        }
         break;
+      }
 
       case Opcode.INDEX_SET:
         frame.registers[aNum][frame.registers[bNum]] = frame.registers[cNum];
         break;
 
-      case Opcode.ATTR_GET:
-        frame.registers[aNum] = frame.registers[bNum][String(c)];
+      case Opcode.ATTR_GET: {
+        const obj = frame.registers[bNum];
+        const attr = String(c);
+
+        if (Array.isArray(obj)) {
+          // 리스트 메서드
+          const listMethods: Record<string, any> = {
+            'append':  (item: any) => { obj.push(item); return null; },
+            'extend':  (items: any[]) => { for (const x of items) obj.push(x); return null; },
+            'pop':     (i?: number) => i !== undefined ? obj.splice(i, 1)[0] : obj.pop(),
+            'insert':  (i: number, item: any) => { obj.splice(i, 0, item); return null; },
+            'remove':  (item: any) => { const idx = obj.indexOf(item); if (idx >= 0) obj.splice(idx, 1); return null; },
+            'index':   (item: any) => obj.indexOf(item),
+            'count':   (item: any) => obj.filter((x: any) => x === item).length,
+            'sort':    () => { obj.sort((a: any, b: any) => a > b ? 1 : a < b ? -1 : 0); return null; },
+            'reverse': () => { obj.reverse(); return null; },
+            'copy':    () => [...obj],
+            'clear':   () => { obj.length = 0; return null; },
+          };
+          frame.registers[aNum] = attr in listMethods ? listMethods[attr] : obj[attr];
+        } else if (typeof obj === 'string') {
+          // 문자열 메서드
+          const strMethods: Record<string, any> = {
+            'upper':      () => obj.toUpperCase(),
+            'lower':      () => obj.toLowerCase(),
+            'strip':      () => obj.trim(),
+            'lstrip':     () => obj.trimStart(),
+            'rstrip':     () => obj.trimEnd(),
+            'split':      (sep?: string) => sep !== undefined ? obj.split(sep) : obj.split(/\s+/).filter(Boolean),
+            'join':       (items: any[]) => items.join(obj),
+            'replace':    (old: string, nw: string) => obj.split(old).join(nw),
+            'startswith': (p: string) => obj.startsWith(p),
+            'endswith':   (s: string) => obj.endsWith(s),
+            'find':       (sub: string) => obj.indexOf(sub),
+            'rfind':      (sub: string) => obj.lastIndexOf(sub),
+            'count':      (sub: string) => (obj.match(new RegExp(sub.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length,
+            'format':     (...args: any[]) => obj.replace(/{}/g, () => String(args.shift() ?? '')),
+            'isdigit':    () => /^\d+$/.test(obj),
+            'isalpha':    () => /^[a-zA-Z]+$/.test(obj),
+            'isnumeric':  () => !isNaN(Number(obj)),
+          };
+          frame.registers[aNum] = attr in strMethods ? strMethods[attr] : (obj as any)[attr];
+        } else if (obj !== null && typeof obj === 'object') {
+          // 딕셔너리 메서드
+          const dictMethods: Record<string, any> = {
+            'get':    (key: any, def: any = null) => key in obj ? obj[key] : def,
+            'keys':   () => Object.keys(obj),
+            'values': () => Object.values(obj),
+            'items':  () => Object.entries(obj).map(([k, v]) => [k, v]),
+            'pop':    (key: any, def: any = undefined) => { if (key in obj) { const v = obj[key]; delete obj[key]; return v; } return def; },
+            'update': (other: any) => { Object.assign(obj, other); return null; },
+            'copy':   () => ({ ...obj }),
+            'clear':  () => { for (const k in obj) delete obj[k]; return null; },
+          };
+          frame.registers[aNum] = attr in dictMethods ? dictMethods[attr] : obj[attr];
+        } else {
+          frame.registers[aNum] = obj?.[attr];
+        }
         break;
+      }
 
       case Opcode.ATTR_SET:
         frame.registers[aNum][String(c)] = frame.registers[bNum];
@@ -353,6 +446,25 @@ export class VM {
       case Opcode.POP_TOP:
         // 스택 최상위 제거 (현재 구현에서는 사용 안함)
         break;
+
+      case Opcode.SETUP_TRY: {
+        // SETUP_TRY [handlerOffset] - 예외 핸들러 등록
+        const handlerOffset = typeof a === 'number' ? a : parseInt(String(a));
+        this.handlerStack.push({ offset: handlerOffset });
+        break;
+      }
+
+      case Opcode.POP_TRY: {
+        // POP_TRY - 예외 핸들러 해제 (정상 종료 시)
+        this.handlerStack.pop();
+        break;
+      }
+
+      case Opcode.RAISE: {
+        // RAISE [reg] - 예외 발생
+        const errVal = frame.registers[aNum];
+        throw new Error(errVal !== undefined ? String(errVal) : 'Exception');
+      }
     }
   }
 
@@ -517,6 +629,23 @@ export class VM {
     }
 
     return false;
+  }
+
+  /**
+   * 예외 발생
+   */
+  private raiseException(exception: any): void {
+    if (this.handlerStack.length > 0) {
+      const handler = this.handlerStack.pop()!;
+      const frame = this.frameStack[this.frameStack.length - 1];
+      frame.pc = handler.offset;  // except 블록 시작으로 PC 이동
+      this.globals.set('__exception__', exception);
+    } else {
+      // 처리되지 않은 예외 → 출력
+      const msg = typeof exception === 'object' ? `${exception.type}: ${exception.message}` : String(exception);
+      this.output.push(msg);
+      this.halted = true;
+    }
   }
 
   /**

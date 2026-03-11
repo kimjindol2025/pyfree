@@ -847,14 +847,47 @@ export class IRCompiler {
 
   /**
    * Try 문장 컴파일
+   * SETUP_TRY [handlerOffset] → try body → JUMP [endOffset] → except body → POP_TRY
    */
   private compileTryStatement(stmt: any): void {
-    this.builder.emit(Opcode.SETUP_TRY, [this.builder.getCurrentOffset() + 100]);
+    // SETUP_TRY with placeholder handler offset
+    const setupTryIdx = this.builder.getCurrentOffset();
+    this.builder.emit(Opcode.SETUP_TRY, [0]); // placeholder
 
+    // try body
     for (const s of stmt.body) {
       this.compileStatement(s);
     }
 
+    // JUMP over except body (placeholder)
+    const jumpOverIdx = this.builder.getCurrentOffset();
+    this.builder.emit(Opcode.JUMP, [0]); // placeholder
+
+    // Handler offset = current position (except body starts here)
+    const handlerOffset = this.builder.getCurrentOffset();
+    this.builder.code[setupTryIdx].args[0] = handlerOffset;
+
+    // except body
+    const handlers = stmt.handlers || [];
+    for (const handler of handlers) {
+      // If except has a variable (except Exception as e:), store the exception
+      if (handler.name) {
+        const errReg = this.allocRegister();
+        this.builder.emit(Opcode.LOAD_GLOBAL, [errReg, '__exception__']);
+        this.builder.emit(Opcode.STORE_FAST, [handler.name, errReg]);
+        this.freeRegister(errReg);
+      }
+      for (const s of handler.body) {
+        this.compileStatement(s);
+      }
+      break; // only first handler for now
+    }
+
+    // End offset
+    const endOffset = this.builder.getCurrentOffset();
+    this.builder.code[jumpOverIdx].args[0] = endOffset;
+
+    // POP_TRY
     this.builder.emit(Opcode.POP_TRY, []);
   }
 
