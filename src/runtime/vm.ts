@@ -350,7 +350,19 @@ export class VM {
         const obj = frame.registers[bNum];
         const attr = String(c);
 
-        if (Array.isArray(obj)) {
+        // ✅ Phase 13: 인스턴스 속성/메서드 접근
+        if (obj !== null && typeof obj === 'object' && obj.__type__ === 'instance') {
+          if (attr in obj && attr !== '__type__' && attr !== '__class__') {
+            frame.registers[aNum] = obj[attr];
+          } else {
+            const method = obj.__class__?.__methods__?.get(attr);
+            if (method) {
+              frame.registers[aNum] = { __type__: 'bound_method', func: method, instance: obj };
+            } else {
+              frame.registers[aNum] = undefined;
+            }
+          }
+        } else if (Array.isArray(obj)) {
           // 리스트 메서드
           const listMethods: Record<string, any> = {
             'append':  (item: any) => { obj.push(item); return null; },
@@ -407,9 +419,13 @@ export class VM {
         break;
       }
 
-      case Opcode.ATTR_SET:
-        frame.registers[aNum][String(c)] = frame.registers[bNum];
+      case Opcode.ATTR_SET: {
+        const obj = frame.registers[aNum];
+        const propertyName = String(instr.args[1]);
+        const value = frame.registers[cNum];
+        obj[propertyName] = value;
         break;
+      }
 
       // 루프
       case Opcode.SETUP_LOOP:
@@ -464,6 +480,26 @@ export class VM {
         // RAISE [reg] - 예외 발생
         const errVal = frame.registers[aNum];
         throw new Error(errVal !== undefined ? String(errVal) : 'Exception');
+      }
+
+      // ✅ Phase 13: 클래스 생성
+      case Opcode.MAKE_CLASS: {
+        const constants = frame.function?.constants || this.program.constants;
+        const classNameIdx = bNum;
+        const methodCount = cNum;
+        const className = String(constants[classNameIdx]);
+
+        const methods = new Map<string, any>();
+        for (let i = 0; i < methodCount; i++) {
+          const nameIdx = instr.args[3 + 2 * i] as number;
+          const funcIdx = instr.args[3 + 2 * i + 1] as number;
+          const name = String(constants[nameIdx]);
+          const func = constants[funcIdx];
+          methods.set(name, func);
+        }
+
+        frame.registers[aNum] = { __type__: 'class', __name__: className, __methods__: methods };
+        break;
       }
     }
   }
@@ -538,6 +574,55 @@ export class VM {
       } catch (e) {
         throw new Error(`함수 호출 오류: ${e}`);
       }
+      return;
+    }
+
+    // ✅ Phase 13: 클래스 호출 → 인스턴스 생성
+    if (typeof func === 'object' && func?.__type__ === 'class') {
+      const instance: any = { __type__: 'instance', __class__: func };
+      frame.registers[resultReg] = instance;
+
+      const initMethod = func.__methods__?.get('__init__');
+      if (initMethod) {
+        const newFrame: Frame = {
+          function: initMethod,
+          code: initMethod.code,
+          pc: 0,
+          registers: new Array(256),
+          locals: new Map(),
+          returnResultReg: undefined,
+          callerRegisters: undefined,
+          closureEnv: initMethod.closureEnv,
+        };
+        // self = instance, 나머지 args 전달
+        newFrame.locals.set(initMethod.paramNames[0], instance);
+        for (let i = 1; i < initMethod.paramCount && i - 1 < argValues.length; i++) {
+          newFrame.locals.set(initMethod.paramNames[i], argValues[i - 1]);
+        }
+        this.frameStack.push(newFrame);
+      }
+      return;
+    }
+
+    // ✅ Phase 13: bound_method 호출 → self 자동 바인딩
+    if (typeof func === 'object' && func?.__type__ === 'bound_method') {
+      const method = func.func;
+      const self = func.instance;
+      const newFrame: Frame = {
+        function: method,
+        code: method.code,
+        pc: 0,
+        registers: new Array(256),
+        locals: new Map(),
+        returnResultReg: resultReg,
+        callerRegisters: frame.registers,
+        closureEnv: method.closureEnv,
+      };
+      newFrame.locals.set(method.paramNames[0], self);
+      for (let i = 1; i < method.paramCount && i - 1 < argValues.length; i++) {
+        newFrame.locals.set(method.paramNames[i], argValues[i - 1]);
+      }
+      this.frameStack.push(newFrame);
       return;
     }
 
@@ -710,6 +795,10 @@ export const NativeLibrary = {
   // 타입
   type: (value: PyFreeValue): string => {
     if (value === null) return 'NoneType';
+    // ✅ Phase 13: 클래스/인스턴스 지원
+    if (typeof value === 'object' && value?.__type__ === 'instance') return value.__class__?.__name__ || 'instance';
+    if (typeof value === 'object' && value?.__type__ === 'class') return 'type';
+    if (typeof value === 'object' && value?.__type__ === 'bound_method') return 'method';
     if (Array.isArray(value)) return 'list';
     if (typeof value === 'string') return 'str';
     if (typeof value === 'number') return Number.isInteger(value) ? 'int' : 'float';
@@ -858,7 +947,12 @@ export const NativeLibrary = {
   },
 
   // 객체 검사
-  isinstance: (obj: any, classname: string): boolean => {
+  isinstance: (obj: any, classname: any): boolean => {
+    // ✅ Phase 13: 클래스 객체 지원
+    if (typeof classname === 'object' && classname?.__type__ === 'class') {
+      return typeof obj === 'object' && obj?.__class__ === classname;
+    }
+    // 기존 로직: 문자열 클래스명
     const type = NativeLibrary.type(obj);
     return type === classname;
   },

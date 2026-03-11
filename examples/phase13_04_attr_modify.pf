@@ -1,0 +1,16 @@
+class Counter:
+    def __init__(self):
+        self.count = 0
+
+    def increment(self):
+        self.count = self.count + 1
+
+    def get(self):
+        return self.count
+
+c = Counter()
+c.increment()
+c.increment()
+c.increment()
+print(c.get())    # 3
+print(c.count)    # 3

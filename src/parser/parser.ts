@@ -231,7 +231,14 @@ export class PyFreeParser {
     const startToken = this.peek();
     this.consume(TokenType.DEF, 'def 키워드 필요');
 
-    const name = this.consume(TokenType.IDENTIFIER, '함수명 필요').value;
+    // 함수명: IDENTIFIER 또는 키워드를 이름으로 허용 (def match(...), def type(...) 등)
+    const nameToken = this.peek();
+    if (nameToken.type !== TokenType.IDENTIFIER && nameToken.type !== TokenType.LPAREN) {
+      this.advance(); // keyword → use as name
+    } else {
+      this.consume(TokenType.IDENTIFIER, '함수명 필요');
+    }
+    const name = nameToken.value;
     this.consume(TokenType.LPAREN, '( 필요');
 
     const params = this.parseParameters();

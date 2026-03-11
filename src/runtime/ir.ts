@@ -141,6 +141,9 @@ export enum Opcode {
   POP_TRY = 'POP_TRY',            // try 해제: pop handler
   RAISE = 'RAISE',                // 예외 발생: raise r[a]
 
+  // 클래스
+  MAKE_CLASS = 'MAKE_CLASS',      // 클래스 생성: r[a] = Class(name[b], methods...)
+
   // 기타
   NOP = 'NOP',                    // 아무것도 하지 않음
   PRINT = 'PRINT',                // 출력 (디버그용): print r[a]
@@ -171,6 +174,8 @@ export interface IRFunction {
   isAsync: boolean;
   paramNames: string[];
   closureEnv?: Map<string, any>; // ✅ Phase 10.3: 런타임 클로저 환경 snapshot
+  isMethod?: boolean;      // ✅ Phase 13: 메서드 여부
+  className?: string;      // ✅ Phase 13: 소속 클래스명
 }
 
 /**
@@ -649,20 +654,89 @@ export class IRCompiler {
   }
 
   /**
+   * ✅ Phase 13: 메서드 코드 컴파일
+   * 클래스 메서드를 IRFunction으로 변환 (전역 저장 안 함)
+   */
+  private compileMethodCode(stmt: any, className: string): IRFunction {
+    const paramNames = stmt.params ? stmt.params.map((p: any) => p.name) : [];
+    const funcBuilder = new IRBuilder();
+    this.builderStack.push(funcBuilder);
+
+    const savedLocalVars = this.localVars;
+    const savedSymbols = new Map(this.symbols);
+    const savedFreeVars = this.freeVarsRef;
+    this.outerSymbolsStack.push(savedSymbols);
+    this.freeVarsRef = [];
+    this.localVars = [...paramNames];
+    this.symbols.clear();
+
+    paramNames.forEach((name: string, i: number) => {
+      this.registerSymbol(name, false, i);
+    });
+
+    for (const bodyStmt of (stmt.body || [])) {
+      this.compileStatement(bodyStmt);
+    }
+
+    const last = funcBuilder.code[funcBuilder.code.length - 1];
+    if (!last || last.op !== Opcode.RETURN) {
+      const noneReg = this.allocRegister();
+      funcBuilder.emit(Opcode.LOAD_NONE, [noneReg]);
+      funcBuilder.emit(Opcode.RETURN, [noneReg]);
+      this.freeRegister(noneReg);
+    }
+
+    const funcCode = [...funcBuilder.code];
+    const funcConstants = funcBuilder.getConstants();
+    const capturedFreeVars = [...this.freeVarsRef];
+    this.builderStack.pop();
+
+    this.outerSymbolsStack.pop();
+    this.freeVarsRef = savedFreeVars;
+    this.symbols = savedSymbols;
+    this.localVars = savedLocalVars;
+
+    return {
+      name: stmt.name,
+      paramCount: paramNames.length,
+      localCount: paramNames.length,
+      code: funcCode,
+      constants: funcConstants,
+      freeVars: capturedFreeVars,
+      isAsync: stmt.isAsync || false,
+      paramNames,
+      isMethod: true,
+      className,
+    };
+  }
+
+  /**
    * 클래스 정의 컴파일
    */
   private compileClassDef(stmt: any): void {
-    // 간단한 구현: 클래스를 딕셔너리로 취급
     const className = stmt.name;
     const classReg = this.allocRegister();
 
-    // 빈 딕셔너리 생성
-    this.builder.emit(Opcode.BUILD_DICT, [classReg, 0]);
+    // 메서드 목록 컴파일
+    const methodPairs: (number | string)[] = [];
+    for (const item of (stmt.body || [])) {
+      if (item.type === 'FunctionDef') {
+        const methodFunc = this.compileMethodCode(item, className);
+        const nameIdx = this.builder.addConstant(item.name);
+        const funcIdx = this.builder.addConstant(methodFunc);
+        methodPairs.push(nameIdx, funcIdx);
+      }
+    }
 
-    // 전역으로 저장
+    const classNameIdx = this.builder.addConstant(className);
+    this.builder.emit(Opcode.MAKE_CLASS, [
+      classReg, classNameIdx, methodPairs.length / 2, ...methodPairs
+    ]);
+
     const globalName = this.builder.addGlobal(className);
     this.builder.emit(Opcode.STORE_GLOBAL, [globalName, classReg]);
-    this.registerSymbol(className, true, classReg, globalName);
+    this.registerSymbol(className, true, undefined, globalName);
+    this.freeRegister(classReg);
   }
 
   /**

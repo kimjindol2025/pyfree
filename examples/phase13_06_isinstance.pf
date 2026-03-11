@@ -1,0 +1,7 @@
+class Animal:
+    def __init__(self, name):
+        self.name = name
+
+a = Animal("Cat")
+print(isinstance(a, Animal))   # True
+print(a.name)                  # Cat
