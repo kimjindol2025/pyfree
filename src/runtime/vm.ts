@@ -157,6 +157,24 @@ export class VM {
         frame.closureEnv?.set(String(a), frame.registers[bNum]);
         break;
 
+      // ✅ Phase 10.3: 함수 생성 시 클로저 environment snapshot
+      case Opcode.MAKE_FUNCTION: {
+        const templateFunc = frame.registers[bNum] as IRFunction;
+
+        // 현재 프레임의 locals에서 freeVars를 snapshot
+        const closureEnv = new Map<string, PyFreeValue>();
+        for (const varName of (templateFunc.freeVars || [])) {
+          const val = frame.locals?.get(varName)
+            ?? frame.closureEnv?.get(varName)
+            ?? this.globals.get(varName);
+          closureEnv.set(varName, val);
+        }
+
+        // 새 함수 객체 생성 (closureEnv 포함)
+        frame.registers[aNum] = { ...templateFunc, closureEnv };
+        break;
+      }
+
       // 산술 연산
       case Opcode.ADD:
         frame.registers[aNum] = frame.registers[bNum] + frame.registers[cNum];
@@ -421,23 +439,12 @@ export class VM {
         locals: new Map(),
         returnResultReg: resultReg,       // 반환값 목적지 저장
         callerRegisters: frame.registers, // 호출자 레지스터 참조
+        closureEnv: func.closureEnv,      // ✅ Phase 10.3: 함수의 snapshot된 closureEnv 전달
       };
 
       // 파라미터 전달
       for (let i = 0; i < argValues.length && i < func.paramCount; i++) {
         newFrame.locals.set(func.paramNames[i], argValues[i]);
-      }
-
-      // ✅ Phase 10.2: 클로저 환경 바인딩 — 현재 프레임의 로컬 변수도 확인!
-      if (func.freeVars && func.freeVars.length > 0) {
-        const closureEnv = new Map<string, PyFreeValue>();
-        for (const varName of func.freeVars) {
-          const val = frame.locals?.get(varName)      // 현재 프레임의 로컬 변수 우선
-            ?? frame.closureEnv?.get(varName)
-            ?? this.globals.get(varName);
-          closureEnv.set(varName, val);
-        }
-        newFrame.closureEnv = closureEnv;
       }
 
       this.frameStack.push(newFrame);

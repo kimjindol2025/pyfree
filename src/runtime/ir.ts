@@ -170,6 +170,7 @@ export interface IRFunction {
   freeVars: string[];      // 캡처한 외부 변수 (클로저)
   isAsync: boolean;
   paramNames: string[];
+  closureEnv?: Map<string, any>; // ✅ Phase 10.3: 런타임 클로저 환경 snapshot
 }
 
 /**
@@ -594,7 +595,16 @@ export class IRCompiler {
     const funcConstIdx = this.builder.addConstant(irFunction);
     const funcReg = this.allocRegister();
     this.builder.emit(Opcode.LOAD_CONST, [funcReg, funcConstIdx]);
-    this.builder.emit(Opcode.STORE_GLOBAL, [funcName, funcReg]);
+
+    // ✅ Phase 10.3: 클로저 변수가 있으면 MAKE_FUNCTION으로 environment snapshot
+    if (capturedFreeVars.length > 0) {
+      const closureReg = this.allocRegister();
+      this.builder.emit(Opcode.MAKE_FUNCTION, [closureReg, funcReg]);
+      this.builder.emit(Opcode.STORE_GLOBAL, [funcName, closureReg]);
+      this.freeRegister(closureReg);
+    } else {
+      this.builder.emit(Opcode.STORE_GLOBAL, [funcName, funcReg]);
+    }
     this.freeRegister(funcReg);
 
     // ✅ Step 7: 데코레이터 처리 (역순 적용 — Python 규칙)
@@ -1740,6 +1750,15 @@ export class IRCompiler {
     const funcConstIdx = this.builder.addConstant(irFunction);
     const resultReg = this.allocRegister();
     this.builder.emit(Opcode.LOAD_CONST, [resultReg, funcConstIdx]);
+
+    // ✅ Phase 10.3: 클로저 변수가 있으면 MAKE_FUNCTION으로 environment snapshot
+    if (capturedFreeVars.length > 0) {
+      const closureReg = this.allocRegister();
+      this.builder.emit(Opcode.MAKE_FUNCTION, [closureReg, resultReg]);
+      this.freeRegister(resultReg);
+      return closureReg;
+    }
+
     return resultReg;
   }
 
