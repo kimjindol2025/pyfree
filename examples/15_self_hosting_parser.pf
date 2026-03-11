@@ -1,0 +1,531 @@
+# Phase 15.3: Self-Hosting Parser (PyFree)
+# Token → AST 변환
+
+# 토큰 상수
+TOKEN_EOF = "EOF"
+TOKEN_NEWLINE = "NEWLINE"
+TOKEN_INDENT = "INDENT"
+TOKEN_DEDENT = "DEDENT"
+
+# Parser 상태 생성
+def create_parser(tokens):
+    return {
+        "tokens": tokens,
+        "pos": 0
+    }
+
+def current_token(parser):
+    if parser["pos"] < len(parser["tokens"]):
+        return parser["tokens"][parser["pos"]]
+    return None
+
+def peek_token(parser):
+    token = current_token(parser)
+    if token:
+        return token["type"]
+    return TOKEN_EOF
+
+def peek_value(parser):
+    token = current_token(parser)
+    if token:
+        return token["value"]
+    return None
+
+def advance(parser):
+    parser["pos"] = parser["pos"] + 1
+
+def match(parser, token_type):
+    if peek_token(parser) == token_type:
+        advance(parser)
+        return True
+    return False
+
+def consume(parser, token_type, message):
+    if peek_token(parser) == token_type:
+        token = current_token(parser)
+        advance(parser)
+        return token
+    # 에러 처리는 나중에
+    return None
+
+# 파싱 함수들
+
+def parse(tokens):
+    parser = create_parser(tokens)
+    statements = []
+
+    while peek_token(parser) != TOKEN_EOF:
+        # NEWLINE 건너뛰기
+        while match(parser, TOKEN_NEWLINE):
+            pass
+
+        if peek_token(parser) == TOKEN_EOF:
+            break
+
+        stmt = parse_statement(parser)
+        if stmt:
+            statements.append(stmt)
+
+    return {
+        "type": "Module",
+        "body": statements
+    }
+
+def parse_statement(parser):
+    # NEWLINE 건너뛰기
+    while match(parser, TOKEN_NEWLINE):
+        pass
+
+    token_type = peek_token(parser)
+
+    # if 문
+    if token_type == "IF":
+        return parse_if(parser)
+
+    # while 문
+    if token_type == "WHILE":
+        return parse_while(parser)
+
+    # for 문
+    if token_type == "FOR":
+        return parse_for(parser)
+
+    # def 문
+    if token_type == "DEF":
+        return parse_def(parser)
+
+    # return 문
+    if token_type == "RETURN":
+        return parse_return(parser)
+
+    # break/continue
+    if token_type == "BREAK":
+        advance(parser)
+        match(parser, TOKEN_NEWLINE)
+        return {"type": "Break"}
+
+    if token_type == "CONTINUE":
+        advance(parser)
+        match(parser, TOKEN_NEWLINE)
+        return {"type": "Continue"}
+
+    # expression statement (assignment 등)
+    return parse_expr_stmt(parser)
+
+def parse_if(parser):
+    advance(parser)  # "if" 건너뛰기
+
+    test = parse_expression(parser)
+    consume(parser, "COLON", "Expected ':' after if condition")
+    match(parser, TOKEN_NEWLINE)
+
+    body = parse_block(parser)
+
+    # else 처리는 나중에
+    orelse = []
+
+    return {
+        "type": "If",
+        "test": test,
+        "body": body,
+        "orelse": orelse
+    }
+
+def parse_while(parser):
+    advance(parser)  # "while" 건너뛰기
+
+    test = parse_expression(parser)
+    consume(parser, "COLON", "Expected ':' after while condition")
+    match(parser, TOKEN_NEWLINE)
+
+    body = parse_block(parser)
+
+    return {
+        "type": "While",
+        "test": test,
+        "body": body
+    }
+
+def parse_for(parser):
+    advance(parser)  # "for" 건너뛰기
+
+    target = parse_primary(parser)  # 루프 변수
+    consume(parser, "IN", "Expected 'in' in for loop")
+    iter = parse_expression(parser)
+    consume(parser, "COLON", "Expected ':' after for clause")
+    match(parser, TOKEN_NEWLINE)
+
+    body = parse_block(parser)
+
+    return {
+        "type": "For",
+        "target": target,
+        "iter": iter,
+        "body": body
+    }
+
+def parse_def(parser):
+    advance(parser)  # "def" 건너뛰기
+
+    name_token = consume(parser, "IDENTIFIER", "Expected function name")
+    name = name_token["value"]
+
+    consume(parser, "LPAREN", "Expected '(' after function name")
+
+    # 파라미터 파싱
+    params = []
+    while peek_token(parser) != "RPAREN":
+        param_token = consume(parser, "IDENTIFIER", "Expected parameter name")
+        params.append(param_token["value"])
+
+        if peek_token(parser) == "COMMA":
+            advance(parser)
+        else:
+            break
+
+    consume(parser, "RPAREN", "Expected ')' after parameters")
+    consume(parser, "COLON", "Expected ':' after function signature")
+    match(parser, TOKEN_NEWLINE)
+
+    body = parse_block(parser)
+
+    return {
+        "type": "FunctionDef",
+        "name": name,
+        "args": {"args": params},
+        "body": body
+    }
+
+def parse_return(parser):
+    advance(parser)  # "return" 건너뛰기
+
+    value = None
+    if peek_token(parser) != TOKEN_NEWLINE and peek_token(parser) != TOKEN_EOF:
+        value = parse_expression(parser)
+
+    match(parser, TOKEN_NEWLINE)
+
+    return {
+        "type": "Return",
+        "value": value
+    }
+
+def parse_block(parser):
+    statements = []
+
+    # INDENT 기대
+    if not match(parser, "INDENT"):
+        return statements
+
+    while peek_token(parser) != "DEDENT" and peek_token(parser) != TOKEN_EOF:
+        stmt = parse_statement(parser)
+        if stmt:
+            statements.append(stmt)
+
+    # DEDENT 처리
+    match(parser, "DEDENT")
+
+    return statements
+
+def parse_expr_stmt(parser):
+    expr = parse_expression(parser)
+
+    # 할당 확인
+    if peek_token(parser) == "ASSIGN":
+        advance(parser)
+        value = parse_expression(parser)
+        match(parser, TOKEN_NEWLINE)
+
+        return {
+            "type": "Assign",
+            "targets": [expr],
+            "value": value
+        }
+
+    # 표현식 문
+    match(parser, TOKEN_NEWLINE)
+    return {
+        "type": "Expr",
+        "value": expr
+    }
+
+def parse_expression(parser):
+    return parse_or(parser)
+
+def parse_or(parser):
+    left = parse_and(parser)
+
+    while peek_token(parser) == "OR":
+        advance(parser)
+        right = parse_and(parser)
+        left = {
+            "type": "BoolOp",
+            "op": "or",
+            "values": [left, right]
+        }
+
+    return left
+
+def parse_and(parser):
+    left = parse_not(parser)
+
+    while peek_token(parser) == "AND":
+        advance(parser)
+        right = parse_not(parser)
+        left = {
+            "type": "BoolOp",
+            "op": "and",
+            "values": [left, right]
+        }
+
+    return left
+
+def parse_not(parser):
+    if peek_token(parser) == "NOT":
+        advance(parser)
+        operand = parse_not(parser)
+        return {
+            "type": "UnaryOp",
+            "op": "not",
+            "operand": operand
+        }
+
+    return parse_comparison(parser)
+
+def parse_comparison(parser):
+    left = parse_addition(parser)
+
+    while peek_token(parser) in ["LESS", "GREATER", "EQUAL_EQUAL", "NOT_EQUAL", "LESS_EQUAL", "GREATER_EQUAL"]:
+        op_token = current_token(parser)
+        op = op_token["value"]
+        advance(parser)
+        right = parse_addition(parser)
+
+        left = {
+            "type": "Compare",
+            "left": left,
+            "ops": [op],
+            "comparators": [right]
+        }
+
+    return left
+
+def parse_addition(parser):
+    left = parse_multiplication(parser)
+
+    while peek_token(parser) in ["PLUS", "MINUS"]:
+        op_token = current_token(parser)
+        op = op_token["value"]
+        advance(parser)
+        right = parse_multiplication(parser)
+
+        left = {
+            "type": "BinOp",
+            "left": left,
+            "op": op,
+            "right": right
+        }
+
+    return left
+
+def parse_multiplication(parser):
+    left = parse_power(parser)
+
+    while peek_token(parser) in ["MULTIPLY", "DIVIDE", "MODULO"]:
+        op_token = current_token(parser)
+        op = op_token["value"]
+        advance(parser)
+        right = parse_power(parser)
+
+        left = {
+            "type": "BinOp",
+            "left": left,
+            "op": op,
+            "right": right
+        }
+
+    return left
+
+def parse_power(parser):
+    left = parse_unary(parser)
+
+    if peek_token(parser) == "POWER":
+        advance(parser)
+        right = parse_power(parser)
+        left = {
+            "type": "BinOp",
+            "left": left,
+            "op": "**",
+            "right": right
+        }
+
+    return left
+
+def parse_unary(parser):
+    if peek_token(parser) in ["PLUS", "MINUS"]:
+        op_token = current_token(parser)
+        op = op_token["value"]
+        advance(parser)
+        operand = parse_unary(parser)
+
+        return {
+            "type": "UnaryOp",
+            "op": op,
+            "operand": operand
+        }
+
+    return parse_postfix(parser)
+
+def parse_postfix(parser):
+    left = parse_primary(parser)
+
+    while True:
+        # 함수 호출
+        if peek_token(parser) == "LPAREN":
+            advance(parser)
+            args = []
+
+            while peek_token(parser) != "RPAREN":
+                args.append(parse_expression(parser))
+                if peek_token(parser) == "COMMA":
+                    advance(parser)
+                else:
+                    break
+
+            consume(parser, "RPAREN", "Expected ')' after arguments")
+
+            left = {
+                "type": "Call",
+                "func": left,
+                "args": args
+            }
+
+        # 리스트/딕셔너리 인덱싱
+        elif peek_token(parser) == "LBRACKET":
+            advance(parser)
+            index = parse_expression(parser)
+            consume(parser, "RBRACKET", "Expected ']' after index")
+
+            left = {
+                "type": "Subscript",
+                "value": left,
+                "slice": index
+            }
+
+        else:
+            break
+
+    return left
+
+def parse_primary(parser):
+    token_type = peek_token(parser)
+    token = current_token(parser)
+
+    # 숫자
+    if token_type == "NUMBER":
+        advance(parser)
+        return {
+            "type": "Constant",
+            "value": token["value"]
+        }
+
+    # 문자열
+    if token_type == "STRING":
+        advance(parser)
+        return {
+            "type": "Constant",
+            "value": token["value"]
+        }
+
+    # 식별자 (변수 또는 True/False/None)
+    if token_type == "IDENTIFIER" or token_type in ["TRUE", "FALSE", "NONE"]:
+        advance(parser)
+        value = token["value"]
+
+        if value == "True":
+            return {"type": "Constant", "value": True}
+        elif value == "False":
+            return {"type": "Constant", "value": False}
+        elif value == "None":
+            return {"type": "Constant", "value": None}
+        else:
+            return {"type": "Name", "id": value}
+
+    # 괄호
+    if token_type == "LPAREN":
+        advance(parser)
+        expr = parse_expression(parser)
+        consume(parser, "RPAREN", "Expected ')' after expression")
+        return expr
+
+    # 리스트
+    if token_type == "LBRACKET":
+        advance(parser)
+        elements = []
+
+        while peek_token(parser) != "RBRACKET":
+            elements.append(parse_expression(parser))
+            if peek_token(parser) == "COMMA":
+                advance(parser)
+            else:
+                break
+
+        consume(parser, "RBRACKET", "Expected ']' after list elements")
+
+        return {
+            "type": "List",
+            "elts": elements
+        }
+
+    # 딕셔너리
+    if token_type == "LBRACE":
+        advance(parser)
+        keys = []
+        values = []
+
+        while peek_token(parser) != "RBRACE":
+            key = parse_expression(parser)
+            consume(parser, "COLON", "Expected ':' in dictionary")
+            value = parse_expression(parser)
+
+            keys.append(key)
+            values.append(value)
+
+            if peek_token(parser) == "COMMA":
+                advance(parser)
+            else:
+                break
+
+        consume(parser, "RBRACE", "Expected '}' after dictionary")
+
+        return {
+            "type": "Dict",
+            "keys": keys,
+            "values": values
+        }
+
+    # 에러: 파싱할 수 없음
+    return {
+        "type": "Error",
+        "message": "Unexpected token: " + token_type
+    }
+
+# 테스트
+print("=== Self-Hosting Parser Test ===")
+print("")
+
+# 간단한 토큰 배열 생성 (테스트용)
+test_tokens = [
+    ["IDENTIFIER", "x"],
+    ["ASSIGN", "="],
+    ["NUMBER", "42"],
+    ["NEWLINE", "\n"],
+    ["EOF", ""]
+]
+
+print("Test tokens: x = 42")
+ast = parse(test_tokens)
+print("AST:", ast)
+print("")
+
+print("✅ Parser structure complete!")

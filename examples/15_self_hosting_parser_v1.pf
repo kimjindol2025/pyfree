@@ -1,0 +1,88 @@
+# Phase 15.3: Parser v1 (매우 간단)
+# 할당문 파싱만 가능
+
+# 파서 만들기
+def create_parser(tokens):
+    state = []
+    state.append(tokens)
+    state.append(0)
+    return state
+
+# 현재 토큰 타입 얻기
+def get_type(parser):
+    tokens = parser[0]
+    pos = parser[1]
+    if pos < len(tokens):
+        token = tokens[pos]
+        return token[0]
+    return "EOF"
+
+# 현재 토큰 값 얻기
+def get_value(parser):
+    tokens = parser[0]
+    pos = parser[1]
+    if pos < len(tokens):
+        token = tokens[pos]
+        return token[1]
+    return None
+
+# 위치 진행
+def move_next(parser):
+    parser[1] = parser[1] + 1
+
+# 토큰 일치 확인
+def check_type(parser, expected):
+    return get_type(parser) == expected
+
+# 파싱: x = 5 형태
+def parse_simple(tokens):
+    # 변수
+    if not check_type(parser, "IDENTIFIER"):
+        return None
+
+    var_name = get_value(parser)
+    move_next(parser)
+
+    # =
+    if not check_type(parser, "ASSIGN"):
+        return None
+
+    move_next(parser)
+
+    # 숫자
+    if not check_type(parser, "NUMBER"):
+        return None
+
+    var_value = get_value(parser)
+    move_next(parser)
+
+    return {
+        "type": "Assignment",
+        "name": var_name,
+        "value": var_value
+    }
+
+# 테스트
+print("=== Parser v1 Simple Test ===")
+print("")
+
+# 토큰 생성: x = 42
+tokens = []
+tokens.append(["IDENTIFIER", "x"])
+tokens.append(["ASSIGN", "="])
+tokens.append(["NUMBER", "42"])
+
+parser = create_parser(tokens)
+
+print("Tokens: x = 42")
+print("Token types:", [tokens[i][0] for i in range(len(tokens))])
+print("")
+
+# 파싱
+result = parse_simple(tokens)
+
+if result:
+    print("AST:", result)
+    print("✅ Parsing successful!")
+else:
+    print("❌ Parsing failed")
