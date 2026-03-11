@@ -1,0 +1,5 @@
+def square(x):
+    return x * x
+
+for i in [1, 2, 3, 4, 5]:
+    print(square(i))

@@ -1,0 +1,8 @@
+def max_val(a, b):
+    if a > b:
+        return a
+    else:
+        return b
+
+print(max_val(3, 7))
+print(max_val(9, 2))
