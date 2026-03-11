@@ -1,0 +1,55 @@
+# Dictionary-Array + try-except 테스트
+
+def array_create():
+    return {"_data": {}, "_len": 0}
+
+def array_append(arr, value):
+    arr["_data"][str(arr["_len"])] = value
+    arr["_len"] = arr["_len"] + 1
+    return arr
+
+def array_len(arr):
+    return arr["_len"]
+
+def main():
+    print("=== Dictionary-Array + try-except 테스트 ===")
+    print()
+
+    index = {}
+    token = "hello"
+    doc_id = 0
+
+    print("1. 새 토큰 'hello' 처리 (첫 번째)")
+    try:
+        doc_list = index[token]
+        print("   기존 배열 찾음")
+    except:
+        print("   새 배열 생성")
+        index[token] = array_create()
+
+    doc_list = index[token]
+    array_append(doc_list, doc_id)
+    print("   문서 ID 0 추가")
+    print()
+
+    print("2. 같은 토큰 'hello' 처리 (두 번째)")
+    try:
+        doc_list = index[token]
+        print("   기존 배열 찾음: 길이 " + str(array_len(doc_list)))
+    except:
+        print("   새 배열 생성")
+        index[token] = array_create()
+
+    doc_list = index[token]
+    array_append(doc_list, 1)
+    print("   문서 ID 1 추가")
+    print()
+
+    print("3. 결과 확인")
+    print("   토큰 수: " + str(len(index)))
+    print("   'hello' 배열 길이: " + str(array_len(index["hello"])))
+    print()
+
+    print("✓ 완료")
+
+main()

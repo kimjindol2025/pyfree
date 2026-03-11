@@ -1,0 +1,157 @@
+# Gogs AI 아키텍트 — 역인덱스 구현 (PyFree)
+# Dictionary 기반 배열로 list.append() 버그 우회
+
+# ===== Array Helper 함수 =====
+
+def array_create():
+    """동적 배열 생성"""
+    return {"_data": {}, "_len": 0}
+
+def array_append(arr, value):
+    """배열에 요소 추가"""
+    arr["_data"][str(arr["_len"])] = value
+    arr["_len"] = arr["_len"] + 1
+    return arr
+
+def array_len(arr):
+    """배열 길이"""
+    return arr["_len"]
+
+def array_get(arr, idx):
+    """배열 요소 조회"""
+    return arr["_data"][str(idx)]
+
+# ===== 토큰화 =====
+
+def tokenize(text):
+    """텍스트를 토큰으로 분해"""
+    tokens = array_create()
+    current = ""
+    i = 0
+
+    while i < len(text):
+        char = text[i]
+
+        if char == " " or char == "\n":
+            if current != "":
+                array_append(tokens, current)
+                current = ""
+        else:
+            current = current + char
+
+        i = i + 1
+
+    if current != "":
+        array_append(tokens, current)
+
+    return tokens
+
+# ===== 역인덱스 구축 =====
+
+def build_index(documents):
+    """역인덱스 구축"""
+    index = {}
+    doc_id = 0
+
+    while doc_id < len(documents):
+        doc = documents[doc_id]
+        tokens = tokenize(doc)
+
+        i = 0
+        while i < array_len(tokens):
+            token = array_get(tokens, i)
+
+            # 토큰이 인덱스에 없으면 생성
+            try:
+                doc_list = index[token]
+            except:
+                index[token] = array_create()
+
+            # 문서 ID 추가 (중복 제거)
+            doc_list = index[token]
+            found = False
+            j = 0
+            while j < array_len(doc_list):
+                if array_get(doc_list, j) == doc_id:
+                    found = True
+                j = j + 1
+
+            if found == False:
+                array_append(doc_list, doc_id)
+
+            i = i + 1
+
+        doc_id = doc_id + 1
+
+    return index
+
+# ===== 검색 =====
+
+def search(index, keyword):
+    """키워드로 문서 검색"""
+    try:
+        return index[keyword]
+    except:
+        return array_create()
+
+# ===== 메인 =====
+
+def main():
+    print("=== Gogs AI 아키텍트 — 역인덱스 ===")
+    print()
+
+    # 1. 문서 준비
+    print("1. 문서 준비")
+    documents = [
+        "hello world from pyfree",
+        "gogs architect system",
+        "python freelang hybrid"
+    ]
+
+    i = 0
+    while i < len(documents):
+        print("  Doc" + str(i) + ": " + documents[i])
+        i = i + 1
+    print()
+
+    # 2. 역인덱스 구축
+    print("2. 역인덱스 구축")
+    index = build_index(documents)
+    print("  토큰 수: " + str(len(index)))
+    print()
+
+    # 3. 단일 검색 테스트
+    print("3. 검색 테스트")
+
+    # 테스트 1: pyfree
+    results = search(index, "pyfree")
+    print("  'pyfree' 검색 결과: " + str(array_len(results)) + "개")
+    i = 0
+    while i < array_len(results):
+        print("    - Doc" + str(array_get(results, i)))
+        i = i + 1
+
+    # 테스트 2: architect
+    results = search(index, "architect")
+    print("  'architect' 검색 결과: " + str(array_len(results)) + "개")
+    i = 0
+    while i < array_len(results):
+        print("    - Doc" + str(array_get(results, i)))
+        i = i + 1
+
+    # 테스트 3: from
+    results = search(index, "from")
+    print("  'from' 검색 결과: " + str(array_len(results)) + "개")
+    i = 0
+    while i < array_len(results):
+        print("    - Doc" + str(array_get(results, i)))
+        i = i + 1
+
+    # 테스트 4: 없는 키워드
+    results = search(index, "notexist")
+    print("  'notexist' 검색 결과: " + str(array_len(results)) + "개 (없음)")
+
+    print()
+    print("✓ 역인덱스 테스트 완료")
+
+main()

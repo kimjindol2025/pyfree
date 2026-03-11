@@ -1,0 +1,93 @@
+# build_index 함수 단독 테스트
+
+def array_create():
+    return {"_data": {}, "_len": 0}
+
+def array_append(arr, value):
+    arr["_data"][str(arr["_len"])] = value
+    arr["_len"] = arr["_len"] + 1
+    return arr
+
+def array_len(arr):
+    return arr["_len"]
+
+def array_get(arr, idx):
+    return arr["_data"][str(idx)]
+
+def tokenize(text):
+    tokens = array_create()
+    current = ""
+    i = 0
+
+    while i < len(text):
+        char = text[i]
+
+        if char == " " or char == "\n":
+            if current != "":
+                array_append(tokens, current)
+                current = ""
+        else:
+            current = current + char
+
+        i = i + 1
+
+    if current != "":
+        array_append(tokens, current)
+
+    return tokens
+
+def build_index(documents):
+    """역인덱스 구축"""
+    index = {}
+    doc_id = 0
+
+    while doc_id < len(documents):
+        doc = documents[doc_id]
+        tokens = tokenize(doc)
+
+        i = 0
+        while i < array_len(tokens):
+            token = array_get(tokens, i)
+
+            # 토큰이 인덱스에 없으면 생성
+            try:
+                doc_list = index[token]
+            except:
+                index[token] = array_create()
+
+            # 문서 ID 추가
+            doc_list = index[token]
+            found = False
+            j = 0
+            while j < array_len(doc_list):
+                if array_get(doc_list, j) == doc_id:
+                    found = True
+                j = j + 1
+
+            if found == False:
+                array_append(doc_list, doc_id)
+
+            i = i + 1
+
+        doc_id = doc_id + 1
+
+    return index
+
+def main():
+    print("=== build_index 테스트 ===")
+
+    documents = [
+        "hello world",
+        "world test"
+    ]
+
+    print("문서 수: " + str(len(documents)))
+    print("색인 구축 중...")
+
+    index = build_index(documents)
+
+    print("색인 완료!")
+    print("토큰 수: " + str(len(index)))
+    print("완료")
+
+main()

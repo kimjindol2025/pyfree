@@ -1,0 +1,18 @@
+# array_create 함수 단독 테스트
+
+def array_create():
+    """동적 배열 생성"""
+    return {"_data": {}, "_len": 0}
+
+def main():
+    print("=== array_create 테스트 ===")
+
+    arr = array_create()
+    print("배열 생성 완료")
+    print("배열 타입: " + str(type(arr)))
+    print("배열 내용:")
+    print(arr)
+
+    print("완료")
+
+main()

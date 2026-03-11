@@ -1,0 +1,51 @@
+# Dictionary에 배열 저장 테스트
+
+def array_create():
+    return {"_data": {}, "_len": 0}
+
+def array_append(arr, value):
+    arr["_data"][str(arr["_len"])] = value
+    arr["_len"] = arr["_len"] + 1
+    return arr
+
+def array_len(arr):
+    return arr["_len"]
+
+def main():
+    print("=== Dictionary 안에 Array 저장 테스트 ===")
+    print()
+
+    # 1. 딕셔너리 생성
+    index = {}
+    print("1. 빈 딕셔너리 생성")
+    print()
+
+    # 2. 배열 생성 및 저장
+    print("2. 배열 생성 및 'hello' 키에 저장")
+    arr = array_create()
+    array_append(arr, 0)
+    index["hello"] = arr
+    print("   완료")
+    print()
+
+    # 3. 딕셔너리에서 꺼내기
+    print("3. 'hello' 키에서 배열 꺼내기")
+    retrieved = index["hello"]
+    print("   길이: " + str(array_len(retrieved)))
+    print()
+
+    # 4. 새 배열 추가
+    print("4. 'world' 키에 새 배열 추가")
+    arr2 = array_create()
+    array_append(arr2, 1)
+    index["world"] = arr2
+    print("   완료")
+    print()
+
+    # 5. 전체 딕셔너리 크기
+    print("5. 전체 토큰 수: " + str(len(index)))
+    print()
+
+    print("✓ 테스트 완료")
+
+main()

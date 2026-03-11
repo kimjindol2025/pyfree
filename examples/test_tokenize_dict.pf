@@ -1,0 +1,61 @@
+# tokenize 함수 테스트 (Dictionary 기반 배열)
+
+def array_create():
+    return {"_data": {}, "_len": 0}
+
+def array_append(arr, value):
+    arr["_data"][str(arr["_len"])] = value
+    arr["_len"] = arr["_len"] + 1
+    return arr
+
+def array_len(arr):
+    return arr["_len"]
+
+def array_get(arr, idx):
+    return arr["_data"][str(idx)]
+
+def tokenize(text):
+    """텍스트를 토큰으로 분해"""
+    tokens = array_create()
+    current = ""
+    i = 0
+
+    while i < len(text):
+        char = text[i]
+
+        if char == " " or char == "\n":
+            if current != "":
+                array_append(tokens, current)
+                current = ""
+        else:
+            current = current + char
+
+        i = i + 1
+
+    if current != "":
+        array_append(tokens, current)
+
+    return tokens
+
+def main():
+    print("=== Tokenize 테스트 (Dictionary 배열) ===")
+    print()
+
+    text = "hello world from pyfree"
+    print("입력: " + text)
+    print()
+
+    tokens = tokenize(text)
+    print("토큰 수: " + str(array_len(tokens)))
+    print("토큰 목록:")
+
+    i = 0
+    while i < array_len(tokens):
+        token = array_get(tokens, i)
+        print("  [" + str(i) + "]: " + token)
+        i = i + 1
+
+    print()
+    print("완료")
+
+main()

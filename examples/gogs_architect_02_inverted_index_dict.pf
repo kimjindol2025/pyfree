@@ -1,0 +1,153 @@
+# PyFree 역인덱스 — Dictionary 기반 배열 사용
+
+# Dictionary 기반 배열 헬퍼
+def array_create():
+    """동적 배열 생성"""
+    return {"_data": {}, "_len": 0}
+
+def array_append(arr, value):
+    """배열에 요소 추가"""
+    arr["_data"][str(arr["_len"])] = value
+    arr["_len"] = arr["_len"] + 1
+    return arr
+
+def array_get(arr, idx):
+    """배열 요소 조회"""
+    return arr["_data"][str(idx)]
+
+def array_len(arr):
+    """배열 길이"""
+    return arr["_len"]
+
+def array_to_list(arr):
+    """배열을 일반 리스트로 변환 (출력용)"""
+    result = []
+    i = 0
+    while i < array_len(arr):
+        result.append(array_get(arr, i))
+        i = i + 1
+    return result
+
+# 역인덱스 구현
+def tokenize(text):
+    """텍스트를 토큰으로 분해"""
+    tokens = array_create()
+    current = ""
+    i = 0
+
+    while i < len(text):
+        char = text[i]
+
+        if char == " " or char == "\n":
+            if current != "":
+                array_append(tokens, current)
+                current = ""
+        else:
+            current = current + char
+
+        i = i + 1
+
+    if current != "":
+        array_append(tokens, current)
+
+    return tokens
+
+def build_inverted_index(documents):
+    """역인덱스 구축"""
+    index = {}
+    doc_id = 0
+
+    while doc_id < len(documents):
+        doc = documents[doc_id]
+        tokens = tokenize(doc)
+
+        i = 0
+        while i < array_len(tokens):
+            token = array_get(tokens, i)
+
+            # 토큰이 인덱스에 없으면 생성
+            try:
+                doc_list = index[token]
+            except:
+                index[token] = array_create()
+
+            # 문서 ID 추가 (중복 제거)
+            found = False
+            doc_list = index[token]
+            j = 0
+            while j < array_len(doc_list):
+                if array_get(doc_list, j) == doc_id:
+                    found = True
+                j = j + 1
+
+            if found == False:
+                array_append(doc_list, doc_id)
+
+            i = i + 1
+
+        doc_id = doc_id + 1
+
+    return index
+
+def search(index, keyword):
+    """키워드로 문서 검색"""
+    try:
+        return index[keyword]
+    except:
+        return array_create()
+
+def main():
+    print("=== 역인덱스 테스트 (Dictionary 기반 배열) ===")
+    print()
+
+    # 1. 문서 준비
+    documents = [
+        "hello world from pyfree",
+        "gogs architect system",
+        "python freelang hybrid"
+    ]
+
+    print("1. 문서 목록:")
+    i = 0
+    while i < len(documents):
+        print("  Doc" + str(i) + ": " + documents[i])
+        i = i + 1
+    print()
+
+    # 2. 역인덱스 구축
+    print("2. 역인덱스 구축 중...")
+    index = build_inverted_index(documents)
+    print("   완료! 토큰: " + str(len(index)) + "개")
+    print()
+
+    # 3. 검색 테스트 1
+    print("3. 검색 테스트 1: 'pyfree'")
+    results = search(index, "pyfree")
+    result_list = array_to_list(results)
+    print("   결과 문서 ID: " + str(result_list))
+    print()
+
+    # 4. 검색 테스트 2
+    print("4. 검색 테스트 2: 'architect'")
+    results = search(index, "architect")
+    result_list = array_to_list(results)
+    print("   결과 문서 ID: " + str(result_list))
+    print()
+
+    # 5. 검색 테스트 3
+    print("5. 검색 테스트 3: 'from'")
+    results = search(index, "from")
+    result_list = array_to_list(results)
+    print("   결과 문서 ID: " + str(result_list))
+    print()
+
+    # 6. 검색 테스트 4 (없는 단어)
+    print("6. 검색 테스트 4: 'notexist'")
+    results = search(index, "notexist")
+    result_list = array_to_list(results)
+    print("   결과 문서 ID: " + str(result_list))
+    print()
+
+    print("✓ 역인덱스 테스트 완료")
+
+main()
