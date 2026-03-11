@@ -1,0 +1,115 @@
+# Gogs AI 아키텍트 (PyFree) — Step 1.2: 역인덱스 (간단한 버전)
+
+def tokenize(text):
+    """텍스트를 토큰으로 분해"""
+    tokens = []
+    current = ""
+    i = 0
+
+    while i < len(text):
+        char = text[i]
+
+        if char == " " or char == "\n":
+            if current != "":
+                tokens.append(current)
+                current = ""
+        else:
+            current = current + char
+
+        i = i + 1
+
+    if current != "":
+        tokens.append(current)
+
+    return tokens
+
+def build_simple_index(documents):
+    """간단한 역인덱스 구축"""
+    index = {}
+
+    doc_id = 0
+    while doc_id < len(documents):
+        doc = documents[doc_id]
+        tokens = tokenize(doc)
+
+        token_id = 0
+        while token_id < len(tokens):
+            token = tokens[token_id]
+
+            # 딕셔너리에 토큰이 없으면 빈 리스트 생성
+            try:
+                token_list = index[token]
+            except:
+                index[token] = []
+
+            # 문서 ID 추가
+            index[token].append(doc_id)
+
+            token_id = token_id + 1
+
+        doc_id = doc_id + 1
+
+    return index
+
+def search(index, keyword):
+    """키워드로 검색"""
+    try:
+        return index[keyword]
+    except:
+        return []
+
+def main():
+    print("=== Gogs AI 아키텍트 (역인덱스) ===")
+    print()
+
+    # 문서 준비
+    documents = [
+        "hello world from pyfree",
+        "gogs architect system",
+        "python freelang hybrid"
+    ]
+
+    print("문서 목록:")
+    i = 0
+    while i < len(documents):
+        print(documents[i])
+        i = i + 1
+    print()
+
+    # 역인덱스 구축
+    print("역인덱스 구축 중...")
+    index = build_simple_index(documents)
+    print("완료")
+    print()
+
+    # 검색 테스트 1
+    print("검색 테스트 1: 'pyfree'")
+    results = search(index, "pyfree")
+    print("결과:")
+    print(results)
+    print()
+
+    # 검색 테스트 2
+    print("검색 테스트 2: 'architect'")
+    results = search(index, "architect")
+    print("결과:")
+    print(results)
+    print()
+
+    # 검색 테스트 3
+    print("검색 테스트 3: 'from'")
+    results = search(index, "from")
+    print("결과:")
+    print(results)
+    print()
+
+    # 검색 테스트 4 (없는 단어)
+    print("검색 테스트 4: 'notexist'")
+    results = search(index, "notexist")
+    print("결과:")
+    print(results)
+    print()
+
+    print("✓ 역인덱스 테스트 완료")
+
+main()

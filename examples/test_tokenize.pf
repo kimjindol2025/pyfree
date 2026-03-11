@@ -1,0 +1,42 @@
+# PyFree tokenize 함수 테스트
+
+def tokenize(text):
+    """텍스트를 토큰으로 분해"""
+    tokens = []
+    current = ""
+    i = 0
+
+    while i < len(text):
+        char = text[i]
+
+        if char == " " or char == "\n":
+            if current != "":
+                tokens.append(current)
+                current = ""
+        else:
+            current = current + char
+
+        i = i + 1
+
+    if current != "":
+        tokens.append(current)
+
+    return tokens
+
+def main():
+    print("=== Tokenize 테스트 ===")
+
+    text = "hello world from pyfree"
+    print("입력: " + text)
+
+    tokens = tokenize(text)
+    print("토큰:")
+
+    j = 0
+    while j < len(tokens):
+        print("  - " + tokens[j])
+        j = j + 1
+
+    print("완료")
+
+main()

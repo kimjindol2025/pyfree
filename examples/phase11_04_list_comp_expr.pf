@@ -1,0 +1,3 @@
+words = ["hello", "world", "python"]
+lengths = [len(w) for w in words]
+print(lengths)

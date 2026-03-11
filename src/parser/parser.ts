@@ -1280,11 +1280,14 @@ export class PyFreeParser {
     while (this.match(TokenType.FOR)) {
       const target = this.parseExpression();
       this.consume(TokenType.IN, 'in 키워드 필요');
-      const iterable = this.parseExpression();
+      // ✅ Phase 11: iterable은 parseLogicalOr()로 파싱 (if 토큰 소비 방지)
+      // parseExpression()을 쓰면 if가 ternary conditional로 해석됨
+      const iterable = this.parseLogicalOr();
 
       const ifs: AST.Expression[] = [];
       while (this.match(TokenType.IF)) {
-        ifs.push(this.parseExpression());
+        // 필터 조건도 parseLogicalOr()로 파싱 (중첩된 ternary 방지)
+        ifs.push(this.parseLogicalOr());
       }
 
       generators.push({

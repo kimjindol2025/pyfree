@@ -1517,10 +1517,100 @@ export class IRCompiler {
   /**
    * 리스트 컴프리헨션 컴파일
    */
+  /**
+   * ✅ Phase 11: 리스트 컴프리헨션 구현
+   * [element for target in iterable if cond1 if cond2]
+   */
   private compileListComprehension(expr: any): number {
+    // 1. 결과 리스트 + appendIdx 초기화
     const resultReg = this.allocRegister();
-    // 간단한 구현: 빈 리스트 반환
-    this.builder.emit(Opcode.BUILD_LIST, [resultReg, 0]);
+    this.builder.emit(Opcode.BUILD_LIST, [resultReg, 0]);       // result = []
+    const appendIdxReg = this.allocRegister();
+    const zeroIdx = this.builder.addConstant(0);
+    this.builder.emit(Opcode.LOAD_CONST, [appendIdxReg, zeroIdx]); // appendIdx = 0
+
+    // 첫 번째 generator만 처리 (중첩 컴프리헨션은 Phase 12+)
+    const generator = expr.generators[0];
+    if (!generator) {
+      return resultReg; // generator 없으면 빈 리스트
+    }
+
+    // 2. iterable 컴파일 + len 계산
+    const iterableReg = this.compileExpression(generator.iterable);
+    const lenFnReg = this.allocRegister();
+    const iterLenReg = this.allocRegister();
+    this.builder.emit(Opcode.LOAD_GLOBAL, [lenFnReg, 'len']);
+    this.builder.emit(Opcode.CALL, [iterLenReg, lenFnReg, 1, iterableReg]);
+
+    // 3. 루프 인덱스 초기화
+    const idxReg = this.allocRegister();
+    this.builder.emit(Opcode.LOAD_CONST, [idxReg, zeroIdx]);
+
+    // 4. 조건 체크 (루프 시작)
+    const condReg = this.allocRegister();
+    const condCheckOffset = this.builder.getCurrentOffset();
+    this.builder.emit(Opcode.LT, [condReg, idxReg, iterLenReg]);
+    const jumpOutIdx = this.builder.getCurrentOffset();
+    this.builder.emit(Opcode.JUMP_IF_FALSE, [condReg, 0]); // placeholder
+
+    // 5. target 설정
+    const itemReg = this.allocRegister();
+    this.builder.emit(Opcode.INDEX_GET, [itemReg, iterableReg, idxReg]);
+    const targetName = generator.target.name;
+    this.builder.emit(Opcode.STORE_FAST, [targetName, itemReg]);
+    const oldSym = this.lookupSymbol(targetName);
+    this.registerSymbol(targetName, false, itemReg);
+
+    // 6. if 조건 처리
+    const condJumpIdxs: number[] = [];
+    for (const cond of (generator.ifs || [])) {
+      const filterReg = this.compileExpression(cond);
+      condJumpIdxs.push(this.builder.getCurrentOffset());
+      this.builder.emit(Opcode.JUMP_IF_FALSE, [filterReg, 0]); // placeholder
+      this.freeRegister(filterReg);
+    }
+
+    // 7. element → result[appendIdx] = element
+    const elemReg = this.compileExpression(expr.element);
+    this.builder.emit(Opcode.INDEX_SET, [resultReg, appendIdxReg, elemReg]);
+    this.freeRegister(elemReg);
+
+    // appendIdx += 1
+    const oneIdx = this.builder.addConstant(1);
+    const oneReg = this.allocRegister();
+    this.builder.emit(Opcode.LOAD_CONST, [oneReg, oneIdx]);
+    this.builder.emit(Opcode.ADD, [appendIdxReg, appendIdxReg, oneReg]);
+    this.freeRegister(oneReg);
+
+    // 8. if 조건 점프 패치 (afterBody)
+    const afterBodyOffset = this.builder.getCurrentOffset();
+    for (const jIdx of condJumpIdxs) {
+      this.builder.code[jIdx].args[1] = afterBodyOffset;
+    }
+
+    // 9. idx += 1 + loop back
+    const oneReg2 = this.allocRegister();
+    this.builder.emit(Opcode.LOAD_CONST, [oneReg2, oneIdx]);
+    this.builder.emit(Opcode.ADD, [idxReg, idxReg, oneReg2]);
+    this.freeRegister(oneReg2);
+    this.builder.emit(Opcode.JUMP, [condCheckOffset]);
+
+    // 10. 루프 끝 패치
+    const loopEndOffset = this.builder.getCurrentOffset();
+    this.builder.code[jumpOutIdx].args[1] = loopEndOffset;
+
+    // 11. 심볼 복원 + 레지스터 해제
+    if (oldSym) this.symbols.set(targetName, oldSym);
+    else this.symbols.delete(targetName);
+
+    this.freeRegister(iterableReg);
+    this.freeRegister(lenFnReg);
+    this.freeRegister(iterLenReg);
+    this.freeRegister(idxReg);
+    this.freeRegister(condReg);
+    this.freeRegister(itemReg);
+    this.freeRegister(appendIdxReg);
+
     return resultReg;
   }
 

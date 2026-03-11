@@ -1,0 +1,204 @@
+# Gogs AI 아키텍트 (PyFree) — Step 1.2: 역인덱스
+
+def tokenize(text):
+    """텍스트를 토큰으로 분해"""
+    tokens = []
+    current = ""
+    i = 0
+
+    while i < len(text):
+        char = text[i]
+
+        # 공백이면 현재 토큰 저장
+        if char == " " or char == "\n" or char == "\t":
+            if current != "":
+                tokens.append(current)
+                current = ""
+        else:
+            current = current + char
+
+        i = i + 1
+
+    # 마지막 토큰 저장
+    if current != "":
+        tokens.append(current)
+
+    return tokens
+
+def build_inverted_index(documents):
+    """문서 → 토큰 → 문서 ID 역매핑"""
+    index = {}
+    doc_id = 0
+
+    while doc_id < len(documents):
+        doc = documents[doc_id]
+        tokens = tokenize(doc)
+        token_id = 0
+
+        while token_id < len(tokens):
+            token = tokens[token_id]
+
+            # 토큰이 인덱스에 없으면 생성
+            try:
+                doc_list = index[token]
+            except:
+                index[token] = []
+
+            # 문서 ID를 토큰의 목록에 추가 (중복 제거)
+            found = False
+            doc_list = index[token]
+            j = 0
+            while j < len(doc_list):
+                if doc_list[j] == doc_id:
+                    found = True
+                j = j + 1
+
+            if found == False:
+                index[token].append(doc_id)
+
+            token_id = token_id + 1
+
+        doc_id = doc_id + 1
+
+    return index
+
+def search_by_keyword(index, keyword):
+    """키워드로 문서 검색"""
+    try:
+        return index[keyword]
+    except:
+        return []
+
+def multi_keyword_search(index, keywords, mode):
+    """다중 키워드 검색 (AND/OR)"""
+    if len(keywords) == 0:
+        return []
+
+    # 첫 번째 키워드로 초기화
+    result = search_by_keyword(index, keywords[0])
+
+    # 나머지 키워드 처리
+    i = 1
+    while i < len(keywords):
+        keyword = keywords[i]
+        next_result = search_by_keyword(index, keyword)
+
+        if mode == "AND":
+            # AND: 교집합
+            new_result = []
+            j = 0
+            while j < len(result):
+                doc_id = result[j]
+                # next_result에 doc_id가 있는지 확인
+                k = 0
+                found = False
+                while k < len(next_result):
+                    if next_result[k] == doc_id:
+                        found = True
+                    k = k + 1
+
+                if found:
+                    new_result.append(doc_id)
+                j = j + 1
+            result = new_result
+
+        elif mode == "OR":
+            # OR: 합집합
+            j = 0
+            while j < len(next_result):
+                doc_id = next_result[j]
+                # result에 doc_id가 있는지 확인
+                k = 0
+                found = False
+                while k < len(result):
+                    if result[k] == doc_id:
+                        found = True
+                    k = k + 1
+
+                if found == False:
+                    result.append(doc_id)
+                j = j + 1
+
+        i = i + 1
+
+    return result
+
+def print_index_stats(index):
+    """인덱스 통계 출력"""
+    unique_tokens = len(index)
+    total_postings = 0
+
+    for token in index:
+        doc_list = index[token]
+        total_postings = total_postings + len(doc_list)
+
+    print("인덱스 통계:")
+    print("  - 고유 토큰: " + str(unique_tokens) + "개")
+    print("  - 전체 posting: " + str(total_postings) + "개")
+
+def main():
+    print("=== 역인덱스 구현 테스트 ===")
+    print()
+
+    # 1. 문서 준비
+    print("1. 문서 준비")
+    documents = [
+        "hello world from pyfree",
+        "gogs architect system",
+        "python freelang hybrid"
+    ]
+
+    i = 0
+    while i < len(documents):
+        print("  - Doc" + str(i) + ": " + documents[i])
+        i = i + 1
+    print()
+
+    # 2. 역인덱스 구축
+    print("2. 역인덱스 구축")
+    index = build_inverted_index(documents)
+    print_index_stats(index)
+    print()
+
+    # 3. 단일 키워드 검색
+    print("3. 단일 키워드 검색")
+    keyword = "pyfree"
+    results = search_by_keyword(index, keyword)
+    print("  키워드 '" + keyword + "'의 검색 결과:")
+    print("    문서 ID: " + str(results))
+    print()
+
+    keyword = "architect"
+    results = search_by_keyword(index, keyword)
+    print("  키워드 '" + keyword + "'의 검색 결과:")
+    print("    문서 ID: " + str(results))
+    print()
+
+    # 4. 다중 키워드 검색 (OR)
+    print("4. 다중 키워드 검색 (OR 모드)")
+    keywords = ["pyfree", "python"]
+    results = multi_keyword_search(index, keywords, "OR")
+    print("  키워드 " + str(keywords) + " OR 검색:")
+    print("    문서 ID: " + str(results))
+    print()
+
+    # 5. 다중 키워드 검색 (AND)
+    print("5. 다중 키워드 검색 (AND 모드)")
+    keywords = ["from", "pyfree"]
+    results = multi_keyword_search(index, keywords, "AND")
+    print("  키워드 " + str(keywords) + " AND 검색:")
+    print("    문서 ID: " + str(results))
+    print()
+
+    # 6. 없는 키워드 검색
+    print("6. 없는 키워드 검색")
+    keyword = "notexist"
+    results = search_by_keyword(index, keyword)
+    print("  키워드 '" + keyword + "'의 검색 결과:")
+    print("    문서 ID: " + str(results))
+    print()
+
+    print("=== 테스트 완료 ===")
+    print("✓ 역인덱스 구축 및 검색 정상 작동")
+
+main()
