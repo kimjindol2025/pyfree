@@ -395,6 +395,9 @@ export class IRCompiler {
   private loopStack: number[] = [];
   private currentFunction: any = null;
   private functions: Map<string, IRFunction> = new Map();
+  // ✅ Phase 10.2: 클로저 지원
+  private outerSymbolsStack: Map<string, any>[] = [];   // 외부 스코프 스택
+  private freeVarsRef: string[] = [];                    // 현재 함수의 자유변수
 
   /**
    * 현재 빌더 접근 (스택 최상위)
@@ -534,6 +537,11 @@ export class IRCompiler {
     const oldLocalVars = this.localVars;
     this.localVars = [...paramNames];
     const oldSymbols = new Map(this.symbols);
+    const oldFreeVars = this.freeVarsRef;    // ✅ Phase 10.2: 이전 freeVars 저장
+
+    // ✅ Phase 10.2: 외부 스코프를 스택에 push (클로저 캡처용)
+    this.outerSymbolsStack.push(oldSymbols);
+    this.freeVarsRef = [];                   // 현재 함수 freeVars 초기화
     this.symbols.clear();
 
     paramNames.forEach((name: string, index: number) => {
@@ -559,6 +567,9 @@ export class IRCompiler {
     const funcConstants = funcBuilder.getConstants();
     this.builderStack.pop();  // funcBuilder 제거 (메인 빌더로 복원)
 
+    // ✅ Phase 10.2: 수집된 freeVars 캡처
+    const capturedFreeVars = [...this.freeVarsRef];
+
     // Step 5: IRFunction 객체 생성 (코드 + 상수 + freeVars 포함!)
     const irFunction: IRFunction = {
       name: funcName,
@@ -566,12 +577,15 @@ export class IRCompiler {
       localCount: this.localVars.length,
       code: funcCode,
       constants: funcConstants,  // 함수 전용 상수
-      freeVars: [],              // Phase 10: 클로저 변수 (향후 분석)
+      freeVars: capturedFreeVars,  // ✅ Phase 10.2: 실제 수집된 freeVars
       isAsync: stmt.isAsync || false,
       paramNames,
     };
 
     // 심볼 복원
+    // ✅ Phase 10.2: 클로저 상태 복원
+    this.outerSymbolsStack.pop();   // 외부 스코프 스택 pop
+    this.freeVarsRef = oldFreeVars; // 이전 freeVars 복원
     this.symbols = oldSymbols;
     this.localVars = oldLocalVars;
 
@@ -1082,18 +1096,45 @@ export class IRCompiler {
       // ✅ 버그 수정 (2026-03-09): LOAD_FAST에 변수 이름 전달 (레지스터 번호 아님)
       // 로컬 변수
       this.builder.emit(Opcode.LOAD_FAST, [resultReg, name]);
+
     } else if (symbol && symbol.isGlobal && symbol.globalName) {
       // 전역 변수
       this.builder.emit(Opcode.LOAD_GLOBAL, [resultReg, symbol.globalName]);
+
     } else {
-      // 정의되지 않은 변수는 자동으로 전역 함수로 간주 (런타임에 해석됨)
-      // 예: print, len, range 등의 내장 함수
-      const globalName = this.builder.addGlobal(name);
-      this.builder.emit(Opcode.LOAD_GLOBAL, [resultReg, globalName]);
-      this.registerSymbol(name, true, undefined, globalName);
+      // ✅ Phase 10.2: 외부 스코프 탐색 → 클로저 캡처
+      const outerSym = this.findInOuterScopes(name);
+      if (outerSym !== null) {
+        // 외부 스코프 변수 발견 → LOAD_DEREF
+        if (!this.freeVarsRef.includes(name)) {
+          this.freeVarsRef.push(name);  // freeVars에 추가
+        }
+        this.builder.emit(Opcode.LOAD_DEREF, [resultReg, name]);
+
+      } else {
+        // 정의되지 않은 변수는 자동으로 전역 함수로 간주 (런타임에 해석됨)
+        // 예: print, len, range 등의 내장 함수
+        const globalName = this.builder.addGlobal(name);
+        this.builder.emit(Opcode.LOAD_GLOBAL, [resultReg, globalName]);
+        this.registerSymbol(name, true, undefined, globalName);
+      }
     }
 
     return resultReg;
+  }
+
+  /**
+   * ✅ Phase 10.2: 외부 스코프 탐색 — 클로저 변수 검색
+   */
+  private findInOuterScopes(name: string): any {
+    // outerSymbolsStack을 역순으로 탐색 (가장 가까운 스코프 우선)
+    for (let i = this.outerSymbolsStack.length - 1; i >= 0; i--) {
+      const scope = this.outerSymbolsStack[i];
+      if (scope.has(name)) {
+        return scope.get(name);
+      }
+    }
+    return null;
   }
 
   /**
@@ -1654,6 +1695,11 @@ export class IRCompiler {
 
     const oldLocalVars = this.localVars;
     const oldSymbols = new Map(this.symbols);
+    const oldFreeVars = this.freeVarsRef;    // ✅ Phase 10.2: 이전 freeVars 저장
+
+    // ✅ Phase 10.2: 외부 스코프를 스택에 push
+    this.outerSymbolsStack.push(oldSymbols);
+    this.freeVarsRef = [];                   // 현재 함수 freeVars 초기화
     this.localVars = [...paramNames];
     this.symbols.clear();
     paramNames.forEach((name: string, index: number) => {
@@ -1669,8 +1715,9 @@ export class IRCompiler {
     const funcCode = [...funcBuilder.code];
     const funcConstants = funcBuilder.getConstants();
     this.builderStack.pop();
-    this.symbols = oldSymbols;
-    this.localVars = oldLocalVars;
+
+    // ✅ Phase 10.2: 수집된 freeVars 캡처
+    const capturedFreeVars = [...this.freeVarsRef];
 
     // 4. IRFunction 생성 → 상수 풀 등록
     const irFunction: IRFunction = {
@@ -1679,10 +1726,16 @@ export class IRCompiler {
       localCount: paramCount,
       code: funcCode,
       constants: funcConstants,
-      freeVars: [],
+      freeVars: capturedFreeVars,  // ✅ Phase 10.2: 실제 수집된 freeVars
       isAsync: false,
       paramNames,
     };
+
+    // ✅ Phase 10.2: 클로저 상태 복원
+    this.outerSymbolsStack.pop();   // 외부 스코프 스택 pop
+    this.freeVarsRef = oldFreeVars; // 이전 freeVars 복원
+    this.symbols = oldSymbols;
+    this.localVars = oldLocalVars;
 
     const funcConstIdx = this.builder.addConstant(irFunction);
     const resultReg = this.allocRegister();

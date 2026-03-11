@@ -428,11 +428,13 @@ export class VM {
         newFrame.locals.set(func.paramNames[i], argValues[i]);
       }
 
-      // ✅ Phase 10: 클로저 환경 바인딩
+      // ✅ Phase 10.2: 클로저 환경 바인딩 — 현재 프레임의 로컬 변수도 확인!
       if (func.freeVars && func.freeVars.length > 0) {
         const closureEnv = new Map<string, PyFreeValue>();
         for (const varName of func.freeVars) {
-          const val = frame.closureEnv?.get(varName) ?? this.globals.get(varName);
+          const val = frame.locals?.get(varName)      // 현재 프레임의 로컬 변수 우선
+            ?? frame.closureEnv?.get(varName)
+            ?? this.globals.get(varName);
           closureEnv.set(varName, val);
         }
         newFrame.closureEnv = closureEnv;
