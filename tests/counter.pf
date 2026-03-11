@@ -1,0 +1,12 @@
+# Counter module for global state test
+# ✅ Phase 15.5: 모듈 전역 상태 공유 테스트
+# (global 선언 버그와 closure 버그 우회)
+
+count_val = [0]  # 리스트를 사용하여 mutable reference 생성
+
+def increment():
+    count_val[0] = count_val[0] + 1
+    return count_val[0]
+
+def get_count():
+    return count_val[0]

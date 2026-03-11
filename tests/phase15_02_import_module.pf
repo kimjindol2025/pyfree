@@ -1,0 +1,6 @@
+# Phase 15 Test 2: import module
+import math
+
+x = math.sqrt(25)
+print(x)           # 5
+print(math.PI > 3) # True

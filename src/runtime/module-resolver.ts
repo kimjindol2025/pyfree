@@ -13,6 +13,11 @@ import fs from 'fs';
 import path from 'path';
 
 /**
+ * ✅ Phase 15: 모듈 로더 타입
+ */
+export type ModuleLoader = (source: string, filePath: string) => Map<string, any>;
+
+/**
  * 모듈 정보
  */
 export interface ModuleInfo {
@@ -33,11 +38,31 @@ export class ModuleResolver {
   private modules: Map<string, ModuleInfo> = new Map();
   private loadingStack: string[] = [];  // 순환 참조 감지용
   private baseDir: string = process.cwd();
+  private loader?: ModuleLoader;  // ✅ Phase 15: 모듈 로더
+  private moduleGlobals: Map<string, Map<string, any>> = new Map();  // ✅ Phase 15.5: 모듈 전역 상태 공유
 
   constructor(baseDir?: string) {
     if (baseDir) {
       this.baseDir = baseDir;
     }
+  }
+
+  /**
+   * ✅ Phase 15.5: 모듈별 전역 상태 조회 또는 생성
+   */
+  getOrCreateModuleGlobals(modulePath: string): Map<string, any> {
+    const normalizedPath = path.resolve(modulePath);
+    if (!this.moduleGlobals.has(normalizedPath)) {
+      this.moduleGlobals.set(normalizedPath, new Map());
+    }
+    return this.moduleGlobals.get(normalizedPath)!;
+  }
+
+  /**
+   * ✅ Phase 15: 모듈 로더 등록
+   */
+  setLoader(fn: ModuleLoader): void {
+    this.loader = fn;
   }
 
   /**
@@ -119,9 +144,13 @@ export class ModuleResolver {
 
     // 순환 참조 감지
     if (this.loadingStack.includes(normalizedPath)) {
-      throw new Error(
-        `순환 참조 감지: ${this.loadingStack.join(' -> ')} -> ${normalizedPath}`
-      );
+      // 부분 로드 객체 반환 (순환 import 방지)
+      return this.modules.get(normalizedPath) ?? {
+        path: normalizedPath,
+        exports: new Map(),
+        isLoaded: false,
+        dependencies: [],
+      };
     }
 
     // 모듈 추가
@@ -143,9 +172,14 @@ export class ModuleResolver {
 
       const fileContent = fs.readFileSync(normalizedPath, 'utf-8');
 
-      // TODO: 파이썬 파일을 파싱하고 export된 심볼 추출
-      // 현재는 기본 구조만 준비
-      moduleInfo.exports.set('__path__', normalizedPath);
+      // ✅ Phase 15: loader를 사용하여 모듈 컴파일 및 실행
+      if (this.loader) {
+        const exports = this.loader(fileContent, normalizedPath);
+        exports.forEach((v, k) => moduleInfo.exports.set(k, v));
+      } else {
+        // loader가 없으면 기본 처리
+        moduleInfo.exports.set('__path__', normalizedPath);
+      }
       moduleInfo.isLoaded = true;
 
     } finally {
@@ -192,8 +226,22 @@ export class ModuleResolver {
   /**
    * 표준 라이브러리 모듈 로드
    * built-in 모듈 처리
+   * ✅ Phase 15: os.path 등 서브모듈 지원
    */
   loadStdlibModule(moduleName: string): ModuleInfo {
+    // 서브모듈 처리 (os.path → os의 path 속성)
+    if (moduleName.includes('.')) {
+      const [baseName, ...subParts] = moduleName.split('.');
+      const baseModule = this.loadStdlibModule(baseName);
+
+      // os.path 특별 처리
+      if (baseName === 'os' && subParts.join('.') === 'path') {
+        return this.createOsPathModule(baseModule.exports);
+      }
+
+      throw new Error(`표준 라이브러리 서브모듈을 찾을 수 없음: ${moduleName}`);
+    }
+
     const stdlibPath = path.resolve(__dirname, '..', 'stdlib', `${moduleName}.ts`);
 
     // stdlib 모듈이 등록되어 있는지 확인
@@ -201,7 +249,7 @@ export class ModuleResolver {
       return this.modules.get(stdlibPath)!;
     }
 
-    // 표준 모듈 목록 (Phase 5 확장)
+    // 표준 모듈 목록 (Phase 15 확장)
     const stdlibModules: { [key: string]: () => Map<string, any> } = {
       'math': () => this.createMathModule(),
       'http': () => this.createHttpModule(),
@@ -212,6 +260,8 @@ export class ModuleResolver {
       'random': () => this.createRandomModule(),
       'os': () => this.createOsModule(),
       'sys': () => this.createSysModule(),
+      're': () => this.createReModule(),
+      'string': () => this.createStringModule(),
     };
 
     if (!stdlibModules[moduleName]) {
@@ -489,6 +539,97 @@ export class ModuleResolver {
     });
 
     exports.set('getpid', () => process.pid);
+
+    return exports;
+  }
+
+  /**
+   * ✅ Phase 15: os.path 모듈
+   */
+  private createOsPathModule(parentExports: Map<string, any>): ModuleInfo {
+    const pathExports = new Map<string, any>();
+
+    pathExports.set('join', (...parts: string[]) => {
+      return path.join(...parts);
+    });
+
+    pathExports.set('dirname', (p: string) => path.dirname(p));
+    pathExports.set('basename', (p: string) => path.basename(p));
+    pathExports.set('split', (p: string) => {
+      const dir = path.dirname(p);
+      const base = path.basename(p);
+      return [dir, base];
+    });
+
+    pathExports.set('exists', (p: string) => fs.existsSync(p));
+    pathExports.set('isfile', (p: string) => {
+      try { return fs.statSync(p).isFile(); } catch { return false; }
+    });
+    pathExports.set('isdir', (p: string) => {
+      try { return fs.statSync(p).isDirectory(); } catch { return false; }
+    });
+
+    pathExports.set('abspath', (p: string) => path.resolve(p));
+    pathExports.set('realpath', (p: string) => path.resolve(p));
+
+    const stdlibPath = path.resolve(__dirname, '..', 'stdlib', 'os.path.ts');
+    const info: ModuleInfo = {
+      path: stdlibPath,
+      exports: pathExports,
+      isLoaded: true,
+      dependencies: [],
+    };
+    this.modules.set(stdlibPath, info);
+    return info;
+  }
+
+  /**
+   * ✅ Phase 15: re 모듈 (정규표현식)
+   */
+  private createReModule(): Map<string, any> {
+    const exports = new Map<string, any>();
+
+    exports.set('match', (pattern: string, string: string) => {
+      const regex = new RegExp(pattern);
+      const match = string.match(regex);
+      return match ? { group: () => match[0], groups: match } : null;
+    });
+
+    exports.set('search', (pattern: string, string: string) => {
+      const regex = new RegExp(pattern);
+      const match = string.match(regex);
+      return match ? { group: () => match[0], groups: match } : null;
+    });
+
+    exports.set('sub', (pattern: string, repl: string, string: string) => {
+      const regex = new RegExp(pattern, 'g');
+      return string.replace(regex, repl);
+    });
+
+    exports.set('split', (pattern: string, string: string) => {
+      const regex = new RegExp(pattern);
+      return string.split(regex);
+    });
+
+    exports.set('compile', (pattern: string) => {
+      return new RegExp(pattern);
+    });
+
+    return exports;
+  }
+
+  /**
+   * ✅ Phase 15: string 모듈
+   */
+  private createStringModule(): Map<string, any> {
+    const exports = new Map<string, any>();
+
+    exports.set('ascii_letters', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ');
+    exports.set('ascii_lowercase', 'abcdefghijklmnopqrstuvwxyz');
+    exports.set('ascii_uppercase', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+    exports.set('digits', '0123456789');
+    exports.set('hexdigits', '0123456789abcdefABCDEF');
+    exports.set('whitespace', ' \t\n\r\x0b\x0c');
 
     return exports;
   }

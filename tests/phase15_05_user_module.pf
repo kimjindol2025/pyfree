@@ -1,0 +1,5 @@
+# Phase 15 Test 5: User-defined module
+from mylib import add, MAX
+
+print(add(3, 4))   # 7
+print(MAX)         # 100

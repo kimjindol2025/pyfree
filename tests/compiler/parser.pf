@@ -1,0 +1,11 @@
+# parser.pf - 간단한 파서
+
+class SimpleParser:
+    def __init__(self, value):
+        self.value = value
+
+    def parse(self):
+        return self.value
+
+def parse_simple(source):
+    return 42

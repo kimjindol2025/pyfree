@@ -1,0 +1,5 @@
+# Phase 15 Test 3: import with alias
+from math import sqrt as sq
+
+print(sq(9))       # 3
+print(sq(16))      # 4

@@ -1,0 +1,6 @@
+# Phase 15 Test 6: Multiple imports
+import math
+from math import PI
+
+print(math.sqrt(4))  # 2
+print(PI > 3)        # True

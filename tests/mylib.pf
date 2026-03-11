@@ -1,0 +1,5 @@
+# User-defined module for Phase 15 Test 5
+def add(a, b):
+    return a + b
+
+MAX = 100

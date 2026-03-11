@@ -41,6 +41,7 @@ export type Statement =
   | BreakStatement
   | ContinueStatement
   | PassStatement
+  | DeleteStatement
   | AssignmentStatement
   | ExpressionStatement
   | ImportStatement
@@ -234,6 +235,17 @@ export interface ContinueStatement extends ASTNode {
  */
 export interface PassStatement extends ASTNode {
   type: 'PassStatement';
+}
+
+/**
+ * 삭제 문장
+ * del x
+ * del x[i]
+ * del x.attr
+ */
+export interface DeleteStatement extends ASTNode {
+  type: 'DeleteStatement';
+  targets: Expression[];
 }
 
 /**
@@ -445,7 +457,18 @@ export interface MemberAccess extends ASTNode {
 export interface Indexing extends ASTNode {
   type: 'Indexing';
   object: Expression;
-  index: Expression;
+  index: Expression | Slice;
+}
+
+/**
+ * ✅ Phase 18: 슬라이싱
+ * arr[1:3], arr[::2], arr[start:stop:step]
+ */
+export interface Slice extends ASTNode {
+  type: 'Slice';
+  start?: Expression;  // 생략 가능 (e.g., [:5])
+  stop?: Expression;   // 생략 가능 (e.g., [2:])
+  step?: Expression;   // 생략 가능 (e.g., [::2])
 }
 
 /**

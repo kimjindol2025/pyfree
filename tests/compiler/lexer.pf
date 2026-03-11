@@ -1,0 +1,9 @@
+# lexer.pf - 간단한 토큰화
+
+from tokens import Token
+
+def tokenize_simple(source):
+    result = []
+    result.append(Token("INTEGER", 42, 1, 1))
+    result.append(Token("EOF", None, 1, 1))
+    return result

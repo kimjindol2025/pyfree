@@ -1,0 +1,6 @@
+# Debug counter test
+from counter import increment, get_count
+print("first:", increment())
+print("second:", increment())
+print("third:", increment())
+print("get_count:", get_count())

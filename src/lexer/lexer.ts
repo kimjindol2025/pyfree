@@ -77,11 +77,11 @@ export class PyFreeLexer {
         continue;
       }
 
-      // 주석 (FreeLang)
-      if (ch === '/' && this.peek() === '/') {
-        this.skipComment();
-        continue;
-      }
+      // 주석 (FreeLang) - Phase 17: // 는 floor division 연산자이므로, 이 부분 제거
+      // if (ch === '/' && this.peek() === '/') {
+      //   this.skipComment();
+      //   continue;
+      // }
 
       // 문자열
       if (ch === '"' || ch === "'") {
@@ -348,6 +348,24 @@ export class PyFreeLexer {
   private tokenizeOperator(): boolean {
     const ch = this.current();
     const nextCh = this.peek();
+    const nextNextCh = this.peekAhead(2);
+
+    // 3글자 연산자 (먼저 체크)
+    const threeCharOps: Record<string, TokenType> = {
+      '//=': TokenType.DOUBLE_SLASH_ASSIGN,
+      '**=': TokenType.POWER_ASSIGN,
+      '<<=': TokenType.LSHIFT_ASSIGN,
+      '>>=': TokenType.RSHIFT_ASSIGN,
+    };
+
+    const threeChar = ch + nextCh + nextNextCh;
+    if (threeCharOps[threeChar]) {
+      this.addToken(threeCharOps[threeChar], threeChar);
+      this.advance();
+      this.advance();
+      this.advance();
+      return true;
+    }
 
     // 2글자 연산자
     const twoCharOps: Record<string, TokenType> = {
@@ -363,6 +381,12 @@ export class PyFreeLexer {
       '-=': TokenType.MINUS_ASSIGN,
       '*=': TokenType.STAR_ASSIGN,
       '/=': TokenType.SLASH_ASSIGN,
+      '%=': TokenType.PERCENT_ASSIGN,
+      '&=': TokenType.AMPERSAND_ASSIGN,
+      '|=': TokenType.PIPE_ASSIGN,
+      '^=': TokenType.CARET_ASSIGN,
+      '<<': TokenType.LSHIFT,
+      '>>': TokenType.RSHIFT,
       '&&': TokenType.AND,
       '||': TokenType.OR,
     };

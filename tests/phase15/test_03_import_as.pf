@@ -1,0 +1,4 @@
+# Phase 15 Test 3: as 별칭 지원
+from math import sqrt as sq
+
+print(sq(9))       # 3

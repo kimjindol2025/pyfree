@@ -1,0 +1,4 @@
+# Circular test: c.pf imports circular_a (creates cycle: a→b→c→a)
+import circular_a as a
+z = 3
+print("c loaded, z =", z)

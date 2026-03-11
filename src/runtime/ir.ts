@@ -91,12 +91,21 @@ export enum Opcode {
   SUB = 'SUB',                    // 빼기: r[a] = r[b] - r[c]
   MUL = 'MUL',                    // 곱하기: r[a] = r[b] * r[c]
   DIV = 'DIV',                    // 나누기: r[a] = r[b] / r[c]
+  FLOORDIV = 'FLOORDIV',          // 정수 나누기: r[a] = r[b] // r[c]
   MOD = 'MOD',                    // 나머지: r[a] = r[b] % r[c]
   POW = 'POW',                    // 거듭제곱: r[a] = r[b] ** r[c]
+
+  // 비트 연산
+  BITAND = 'BITAND',              // 비트 AND: r[a] = r[b] & r[c]
+  BITOR = 'BITOR',                // 비트 OR: r[a] = r[b] | r[c]
+  BITXOR = 'BITXOR',              // 비트 XOR: r[a] = r[b] ^ r[c]
+  LSHIFT = 'LSHIFT',              // 왼쪽 시프트: r[a] = r[b] << r[c]
+  RSHIFT = 'RSHIFT',              // 오른쪽 시프트: r[a] = r[b] >> r[c]
 
   // 단항 연산
   NEG = 'NEG',                    // 부호 반전: r[a] = -r[b]
   NOT = 'NOT',                    // 논리 NOT: r[a] = !r[b]
+  BITNOT = 'BITNOT',              // 비트 NOT: r[a] = ~r[b]
 
   // 비교
   EQ = 'EQ',                      // 같음: r[a] = (r[b] == r[c])
@@ -125,10 +134,19 @@ export enum Opcode {
   BUILD_LIST = 'BUILD_LIST',      // 리스트 생성: r[a] = [r[b], r[c], ...]
   BUILD_DICT = 'BUILD_DICT',      // 딕셔너리 생성: r[a] = {k:v, ...}
   BUILD_TUPLE = 'BUILD_TUPLE',    // 튜플 생성: r[a] = (r[b], r[c], ...)
+  BUILD_SET = 'BUILD_SET',        // Set 생성: r[a] = {r[b], r[c], ...}
   INDEX_GET = 'INDEX_GET',        // 인덱싱: r[a] = r[b][r[c]]
   INDEX_SET = 'INDEX_SET',        // 인덱싱 저장: r[a][r[b]] = r[c]
   ATTR_GET = 'ATTR_GET',          // 멤버 접근: r[a] = r[b].name
   ATTR_SET = 'ATTR_SET',          // 멤버 저장: r[a].name = r[b]
+
+  // ✅ Phase 18: 컨테이너 강화
+  MAKE_SLICE = 'MAKE_SLICE',      // Slice 객체: r[a] = Slice(start=r[b], stop=r[c], step=r[d])
+  SLICE_GET = 'SLICE_GET',        // 슬라이싱 조회: r[a] = r[b][slice_r[c]]
+  SLICE_SET = 'SLICE_SET',        // 슬라이싱 저장: r[a][slice_r[b]] = r[c]
+  UNPACK_SEQ = 'UNPACK_SEQ',      // 언패킹: r[a], r[a+1], ... = unpack(r[b], count=c)
+  DELETE_NAME = 'DELETE_NAME',    // del x: 변수 삭제
+  DELETE_ITEM = 'DELETE_ITEM',    // del x[i]: 항목 삭제
 
   // 반복
   SETUP_LOOP = 'SETUP_LOOP',      // 루프 설정: push loop context
@@ -143,6 +161,10 @@ export enum Opcode {
 
   // 클래스
   MAKE_CLASS = 'MAKE_CLASS',      // 클래스 생성: r[a] = Class(name[b], methods...)
+
+  // ✅ Phase 15: 모듈 시스템
+  IMPORT_MODULE = 'IMPORT_MODULE',  // r[a] = load_module(moduleNameStr_b)
+  IMPORT_FROM = 'IMPORT_FROM',     // r[a] = r[b].__exports__.get(symbolNameStr_c)
 
   // 기타
   NOP = 'NOP',                    // 아무것도 하지 않음
@@ -176,6 +198,7 @@ export interface IRFunction {
   closureEnv?: Map<string, any>; // ✅ Phase 10.3: 런타임 클로저 환경 snapshot
   isMethod?: boolean;      // ✅ Phase 13: 메서드 여부
   className?: string;      // ✅ Phase 13: 소속 클래스명
+  maxReg?: number;         // ✅ Phase 16: 함수 컴파일 시 최대 레지스터 번호
 }
 
 /**
@@ -511,6 +534,9 @@ export class IRCompiler {
       case 'PassStatement':
         this.builder.emit(Opcode.NOP, []);
         break;
+      case 'DeleteStatement':
+        this.compileDeleteStatement(stmt);
+        break;
       case 'AssignmentStatement':
         this.compileAssignmentStatement(stmt);
         break;
@@ -571,6 +597,17 @@ export class IRCompiler {
     // Step 4: 함수 코드/상수 캡처 후 빌더 복원
     const funcCode = [...funcBuilder.code];
     const funcConstants = funcBuilder.getConstants();
+
+    // ✅ Phase 16: 함수 내 최대 레지스터 번호 계산
+    let maxReg = 0;
+    for (const instr of funcCode) {
+      for (const arg of instr.args) {
+        if (typeof arg === 'number' && arg >= 0 && arg < 10000) {
+          maxReg = Math.max(maxReg, arg);
+        }
+      }
+    }
+
     this.builderStack.pop();  // funcBuilder 제거 (메인 빌더로 복원)
 
     // ✅ Phase 10.2: 수집된 freeVars 캡처
@@ -586,6 +623,7 @@ export class IRCompiler {
       freeVars: capturedFreeVars,  // ✅ Phase 10.2: 실제 수집된 freeVars
       isAsync: stmt.isAsync || false,
       paramNames,
+      maxReg,  // ✅ Phase 16: 함수별 최대 레지스터 기록
     };
 
     // 심볼 복원
@@ -1002,7 +1040,75 @@ export class IRCompiler {
    * 할당문 컴파일
    */
   private compileAssignmentStatement(stmt: any): void {
-    const valueReg = this.compileExpression(stmt.value);
+    // 복합 대입 처리 (a += b → a = a + b)
+    let finalValueReg = this.compileExpression(stmt.value);
+
+    if (stmt.operator && stmt.operator !== 'assign') {
+      // 복합 대입: 좌변을 읽고 연산 수행
+      const targetReg = this.compileExpression(stmt.target);
+      const resultReg = this.allocRegister();
+
+      // operator: 'plus_assign', 'minus_assign', 'floordiv_assign' 등 → '+', '-', '//' 등으로 변환
+      const opMap: Record<string, string> = {
+        'plus_assign': '+',
+        'minus_assign': '-',
+        'star_assign': '*',
+        'slash_assign': '/',
+        'floordiv_assign': '//',
+        'percent_assign': '%',
+        'power_assign': '**',
+        'bitand_assign': '&',
+        'bitor_assign': '|',
+        'bitxor_assign': '^',
+        'lshift_assign': '<<',
+        'rshift_assign': '>>',
+      };
+      const op = opMap[stmt.operator];
+
+      // 연산 수행
+      switch (op) {
+        case '+':
+          this.builder.emit(Opcode.ADD, [resultReg, targetReg, finalValueReg]);
+          break;
+        case '-':
+          this.builder.emit(Opcode.SUB, [resultReg, targetReg, finalValueReg]);
+          break;
+        case '*':
+          this.builder.emit(Opcode.MUL, [resultReg, targetReg, finalValueReg]);
+          break;
+        case '/':
+          this.builder.emit(Opcode.DIV, [resultReg, targetReg, finalValueReg]);
+          break;
+        case '//':
+          this.builder.emit(Opcode.FLOORDIV, [resultReg, targetReg, finalValueReg]);
+          break;
+        case '%':
+          this.builder.emit(Opcode.MOD, [resultReg, targetReg, finalValueReg]);
+          break;
+        case '**':
+          this.builder.emit(Opcode.POW, [resultReg, targetReg, finalValueReg]);
+          break;
+        case '&':
+          this.builder.emit(Opcode.BITAND, [resultReg, targetReg, finalValueReg]);
+          break;
+        case '|':
+          this.builder.emit(Opcode.BITOR, [resultReg, targetReg, finalValueReg]);
+          break;
+        case '^':
+          this.builder.emit(Opcode.BITXOR, [resultReg, targetReg, finalValueReg]);
+          break;
+        case '<<':
+          this.builder.emit(Opcode.LSHIFT, [resultReg, targetReg, finalValueReg]);
+          break;
+        case '>>':
+          this.builder.emit(Opcode.RSHIFT, [resultReg, targetReg, finalValueReg]);
+          break;
+      }
+
+      this.freeRegister(targetReg);
+      this.freeRegister(finalValueReg);
+      finalValueReg = resultReg;
+    }
 
     if (stmt.target.type === 'Identifier') {
       const name = stmt.target.name;
@@ -1011,29 +1117,65 @@ export class IRCompiler {
       if (symbol && !symbol.isGlobal && symbol.register !== undefined) {
         // ✅ 버그 수정 (2026-03-09): STORE_FAST에 변수 이름 전달 (레지스터 번호 아님)
         // 로컬 변수
-        this.builder.emit(Opcode.STORE_FAST, [name, valueReg]);
+        this.builder.emit(Opcode.STORE_FAST, [name, finalValueReg]);
       } else {
         // 전역 변수
         const globalName = this.builder.addGlobal(name);
-        this.builder.emit(Opcode.STORE_GLOBAL, [globalName, valueReg]);
+        this.builder.emit(Opcode.STORE_GLOBAL, [globalName, finalValueReg]);
         this.registerSymbol(name, true, undefined, globalName);
       }
     } else if (stmt.target.type === 'Indexing') {
       // 인덱싱 할당: a[i] = value
       const objReg = this.compileExpression(stmt.target.object);
       const idxReg = this.compileExpression(stmt.target.index);
-      this.builder.emit(Opcode.INDEX_SET, [objReg, idxReg, valueReg]);
+      this.builder.emit(Opcode.INDEX_SET, [objReg, idxReg, finalValueReg]);
       this.freeRegister(objReg);
       this.freeRegister(idxReg);
     } else if (stmt.target.type === 'MemberAccess') {
       // 멤버 접근 할당: a.x = value
       const objReg = this.compileExpression(stmt.target.object);
       const propertyName = stmt.target.property;
-      this.builder.emit(Opcode.ATTR_SET, [objReg, propertyName as any, valueReg]);
+      this.builder.emit(Opcode.ATTR_SET, [objReg, propertyName as any, finalValueReg]);
       this.freeRegister(objReg);
+    } else if (stmt.target.type === 'Tuple') {
+      // ✅ Phase 18: 튜플 언패킹: a, b = 1, 2 또는 (a, b) = (1, 2)
+      const elements = stmt.target.elements;
+      const count = elements.length;
+
+      // 각 요소를 인덱싱으로 추출
+      for (let i = 0; i < count; i++) {
+        const element = elements[i];
+        if (element.type === 'Identifier') {
+          const name = element.name;
+          const indexReg = this.allocRegister();
+          const resultReg = this.allocRegister();
+
+          // 상수 인덱스 로드
+          const constIdx = this.builder.addConstant(i);
+          this.builder.emit(Opcode.LOAD_CONST, [indexReg, constIdx]);
+
+          // INDEX_GET으로 시퀀스 요소 추출
+          this.builder.emit(Opcode.INDEX_GET, [resultReg, finalValueReg, indexReg]);
+          this.freeRegister(indexReg);
+
+          // 추출된 값을 변수에 저장
+          const symbol = this.lookupSymbol(name);
+          if (symbol && !symbol.isGlobal && symbol.register !== undefined) {
+            this.builder.emit(Opcode.STORE_FAST, [name, resultReg]);
+          } else {
+            const globalName = this.builder.addGlobal(name);
+            this.builder.emit(Opcode.STORE_GLOBAL, [globalName, resultReg]);
+            this.registerSymbol(name, true, undefined, globalName);
+          }
+
+          this.freeRegister(resultReg);
+        } else {
+          throw new Error(`튜플 언패킹은 식별자만 지원합니다: ${element.type}`);
+        }
+      }
     }
 
-    this.freeRegister(valueReg);
+    this.freeRegister(finalValueReg);
   }
 
   /**
@@ -1042,6 +1184,35 @@ export class IRCompiler {
   private compileExpressionStatement(stmt: any): void {
     const exprReg = this.compileExpression(stmt.expression);
     this.freeRegister(exprReg);
+  }
+
+  /**
+   * 삭제 문장 컴파일 (del x, del x[i], del x.attr)
+   */
+  private compileDeleteStatement(stmt: any): void {
+    for (const target of stmt.targets) {
+      if (target.type === 'Identifier') {
+        // del x → DELETE_NAME
+        const nameIdx = this.builder.addConstant(target.name);
+        this.builder.emit(Opcode.DELETE_NAME, [nameIdx]);
+      } else if (target.type === 'Indexing') {
+        // del x[i] → DELETE_ITEM
+        const objReg = this.compileExpression(target.object);
+        const keyReg = this.compileExpression(target.index);
+        this.builder.emit(Opcode.DELETE_ITEM, [objReg, keyReg]);
+        this.freeRegister(objReg);
+        this.freeRegister(keyReg);
+      } else if (target.type === 'MemberAccess') {
+        // del x.attr → ATTR_SET with undefined (or special marker)
+        // For now, we'll handle as a simple name deletion
+        const attrName = target.attr || target.property;
+        const objReg = this.compileExpression(target.object);
+        const attrIdx = this.builder.addConstant(attrName);
+        // DELETE_ATTR would use DELETE_ITEM with string key for object properties
+        this.builder.emit(Opcode.DELETE_ITEM, [objReg, attrIdx]);
+        this.freeRegister(objReg);
+      }
+    }
   }
 
   /**
@@ -1055,62 +1226,41 @@ export class IRCompiler {
   }
 
   /**
-   * Import 문장 컴파일
+   * ✅ Phase 15: Import 문장 컴파일
    * from module import name1, name2 as alias
    * import module
    */
   private compileImportStatement(stmt: any): void {
-    // Phase 4-1: 모듈 시스템
-    // 현재는 표준 모듈만 지원 (math, http 등)
-    // 향후: 파일 기반 모듈 로드 지원
-
     if (stmt.isFromImport && stmt.module) {
-      // from X import Y, Z
-      const moduleName = stmt.module;
+      // from X import Y as Z
+      const moduleReg = this.allocRegister();
+      const moduleNameIdx = this.builder.addConstant(stmt.module);
+      this.builder.emit(Opcode.IMPORT_MODULE, [moduleReg, moduleNameIdx]);
 
-      // 각 import 항목에 대해
       for (const importName of stmt.names) {
-        const symbolName = importName.name;
         const alias = importName.asName || importName.name;
+        const symbolReg = this.allocRegister();
+        const symbolIdx = this.builder.addConstant(importName.name);
+        this.builder.emit(Opcode.IMPORT_FROM, [symbolReg, moduleReg, symbolIdx]);
 
-        // 런타임에 모듈에서 심볼을 동적으로 로드하도록
-        // 특별한 내부 함수 호출 (VM에서 구현)
-        const callReg = this.allocRegister();
-        const funcName = '__import_symbol__';
-        const moduleIdx = this.builder.addConstant(moduleName);
-        const symbolIdx = this.builder.addConstant(symbolName);
-
-        // LOAD_CONST로 모듈과 심볼 이름 로드
-        this.builder.emit(Opcode.LOAD_CONST, [callReg, moduleIdx]);
-        const symbReg = this.allocRegister();
-        this.builder.emit(Opcode.LOAD_CONST, [symbReg, symbolIdx]);
-
-        // 후추 처리: 런타임에서 모듈 로더 호출
-        // 현재는 LOAD_GLOBAL로 바인딩
         const globalName = this.builder.addGlobal(alias);
-        this.builder.emit(Opcode.STORE_GLOBAL, [globalName, callReg]);
-        this.registerSymbol(alias, true, callReg, globalName);
-
-        this.freeRegister(symbReg);
-        this.freeRegister(callReg);
+        this.builder.emit(Opcode.STORE_GLOBAL, [globalName, symbolReg]);
+        this.registerSymbol(alias, true, symbolReg, globalName);
+        this.freeRegister(symbolReg);
       }
-    } else if (stmt.names && stmt.names.length > 0) {
-      // import X, Y, Z (단순 import)
+      this.freeRegister(moduleReg);
+    } else {
+      // import X [as alias]
       for (const importName of stmt.names) {
-        const moduleName = importName.name;
-        const alias = importName.asName || moduleName;
+        const alias = importName.asName || importName.name.split('.').pop()!;
+        const moduleReg = this.allocRegister();
+        const moduleNameIdx = this.builder.addConstant(importName.name);
+        this.builder.emit(Opcode.IMPORT_MODULE, [moduleReg, moduleNameIdx]);
 
-        // 모듈 이름을 상수로 저장
-        const constIdx = this.builder.addConstant(moduleName);
-        const reg = this.allocRegister();
-        this.builder.emit(Opcode.LOAD_CONST, [reg, constIdx]);
-
-        // 전역으로 저장
         const globalName = this.builder.addGlobal(alias);
-        this.builder.emit(Opcode.STORE_GLOBAL, [globalName, reg]);
-        this.registerSymbol(alias, true, reg, globalName);
-
-        this.freeRegister(reg);
+        this.builder.emit(Opcode.STORE_GLOBAL, [globalName, moduleReg]);
+        this.registerSymbol(alias, true, moduleReg, globalName);
+        this.freeRegister(moduleReg);
       }
     }
   }
@@ -1403,11 +1553,29 @@ export class IRCompiler {
       case '/':
         this.builder.emit(Opcode.DIV, [resultReg, leftReg, rightReg]);
         break;
+      case '//':
+        this.builder.emit(Opcode.FLOORDIV, [resultReg, leftReg, rightReg]);
+        break;
       case '%':
         this.builder.emit(Opcode.MOD, [resultReg, leftReg, rightReg]);
         break;
       case '**':
         this.builder.emit(Opcode.POW, [resultReg, leftReg, rightReg]);
+        break;
+      case '&':
+        this.builder.emit(Opcode.BITAND, [resultReg, leftReg, rightReg]);
+        break;
+      case '|':
+        this.builder.emit(Opcode.BITOR, [resultReg, leftReg, rightReg]);
+        break;
+      case '^':
+        this.builder.emit(Opcode.BITXOR, [resultReg, leftReg, rightReg]);
+        break;
+      case '<<':
+        this.builder.emit(Opcode.LSHIFT, [resultReg, leftReg, rightReg]);
+        break;
+      case '>>':
+        this.builder.emit(Opcode.RSHIFT, [resultReg, leftReg, rightReg]);
         break;
       case '==':
         this.builder.emit(Opcode.EQ, [resultReg, leftReg, rightReg]);
@@ -1459,6 +1627,9 @@ export class IRCompiler {
         break;
       case 'not':
         this.builder.emit(Opcode.NOT, [resultReg, operandReg]);
+        break;
+      case '~':
+        this.builder.emit(Opcode.BITNOT, [resultReg, operandReg]);
         break;
       case '+':
         // 단항 + 는 아무것도 하지 않음
@@ -1597,12 +1768,51 @@ export class IRCompiler {
   private compileIndexing(expr: any): number {
     const resultReg = this.allocRegister();
     const objReg = this.compileExpression(expr.object);
-    const idxReg = this.compileExpression(expr.index);
 
-    this.builder.emit(Opcode.INDEX_GET, [resultReg, objReg, idxReg]);
+    // Phase 18: 슬라이싱 지원
+    if (expr.index.type === 'Slice') {
+      // 슬라이싱: arr[start:stop:step]
+      const sliceReg = this.compileSlice(expr.index);
+      this.builder.emit(Opcode.SLICE_GET, [resultReg, objReg, sliceReg]);
+      this.freeRegister(sliceReg);
+    } else {
+      // 일반 인덱싱: arr[index]
+      const idxReg = this.compileExpression(expr.index);
+      this.builder.emit(Opcode.INDEX_GET, [resultReg, objReg, idxReg]);
+      this.freeRegister(idxReg);
+    }
 
     this.freeRegister(objReg);
-    this.freeRegister(idxReg);
+    return resultReg;
+  }
+
+  /**
+   * Phase 18: 슬라이스 컴파일
+   * Slice(start, stop, step) 객체 생성
+   */
+  private compileSlice(sliceExpr: any): number {
+    const resultReg = this.allocRegister();
+    const startReg = sliceExpr.start ? this.compileExpression(sliceExpr.start) : this.allocRegister();
+    const stopReg = sliceExpr.stop ? this.compileExpression(sliceExpr.stop) : this.allocRegister();
+    const stepReg = sliceExpr.step ? this.compileExpression(sliceExpr.step) : this.allocRegister();
+
+    // 빈 값들은 None으로 초기화
+    if (!sliceExpr.start) {
+      this.builder.emit(Opcode.LOAD_NONE, [startReg]);
+    }
+    if (!sliceExpr.stop) {
+      this.builder.emit(Opcode.LOAD_NONE, [stopReg]);
+    }
+    if (!sliceExpr.step) {
+      this.builder.emit(Opcode.LOAD_NONE, [stepReg]);
+    }
+
+    // MAKE_SLICE: r[a] = Slice(start=r[b], stop=r[c], step=r[d])
+    this.builder.emit(Opcode.MAKE_SLICE, [resultReg, startReg, stopReg, stepReg]);
+
+    this.freeRegister(startReg);
+    this.freeRegister(stopReg);
+    this.freeRegister(stepReg);
     return resultReg;
   }
 
@@ -1871,7 +2081,6 @@ export class IRCompiler {
    */
   private compileSet(expr: any): number {
     const resultReg = this.allocRegister();
-    // 간단한 구현: 배열로 처리
     const elements = expr.elements || [];
     const elemRegs: number[] = [];
 
@@ -1879,7 +2088,7 @@ export class IRCompiler {
       elemRegs.push(this.compileExpression(elem));
     }
 
-    this.builder.emit(Opcode.BUILD_LIST, [resultReg, elemRegs.length, ...elemRegs]);
+    this.builder.emit(Opcode.BUILD_SET, [resultReg, elemRegs.length, ...elemRegs]);
 
     for (const elemReg of elemRegs) {
       this.freeRegister(elemReg);

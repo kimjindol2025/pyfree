@@ -1,0 +1,40 @@
+# main.pf - 컴파일러 통합 테스트
+
+print("=== PyFree Compiler Module Test ===\n")
+
+from tokens import Token, is_keyword
+import lexer
+import parser
+import ast_nodes
+
+print("[Module Load]")
+print("✓ tokens")
+print("✓ lexer")
+print("✓ parser")
+print("✓ ast_nodes")
+
+print("\n[Token Test]")
+tok = Token("NUMBER", 123, 1, 1)
+print("Token created: " + str(tok.type) + " = " + str(tok.value))
+
+print("\n[Keyword Test]")
+print("is_keyword('def') = " + str(is_keyword("def")))
+print("is_keyword('if') = " + str(is_keyword("if")))
+print("is_keyword('foo') = " + str(is_keyword("foo")))
+
+print("\n[Parser Module Test]")
+print("parser.SimpleParser exists: " + str(parser.SimpleParser != None))
+
+print("\n[AST Module Test]")
+expr_obj = ast_nodes.Expr(100)
+print("Expr(100).eval() = " + str(expr_obj.eval()))
+
+binop_obj = ast_nodes.BinOp(ast_nodes.Expr(10), "+", ast_nodes.Expr(20))
+print("BinOp(10, '+', 20).eval() = " + str(binop_obj.eval()))
+
+print("\n[Cross-Module Test]")
+token2 = Token("OP", "+", 1, 5)
+expr2 = ast_nodes.Expr(token2.value)
+print("Created token + expr: " + str(expr2.eval()))
+
+print("\n=== All Tests Passed ===")

@@ -1,0 +1,41 @@
+# test_import.pf - 모듈 import 테스트
+
+print("=== Module Import Test ===")
+
+from tokens import Token
+print("✓ Imported Token class")
+
+from tokens import is_keyword
+print("✓ Imported is_keyword function")
+
+import lexer
+print("✓ Imported lexer module")
+
+import parser
+print("✓ Imported parser module")
+
+import ast_nodes
+print("✓ Imported ast_nodes module")
+
+print("\n=== Functionality Test ===")
+
+result = is_keyword("def")
+print("is_keyword('def') = " + str(result))
+
+result2 = is_keyword("xyz")
+print("is_keyword('xyz') = " + str(result2))
+
+print("\n=== Module Chain Test ===")
+
+token = Token("INT", 100, 1, 1)
+print("Created token: " + str(token.type))
+
+print("\n=== Cross-Module Test ===")
+
+expr = ast_nodes.Expr(42)
+print("Created Expr with value: " + str(expr.value))
+
+value = expr.eval()
+print("Expr.eval() = " + str(value))
+
+print("\n=== All Tests Complete ===")

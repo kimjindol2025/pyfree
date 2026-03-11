@@ -166,6 +166,11 @@ export class PyFreeParser {
       return { type: 'PassStatement', line, column };
     }
 
+    // Del
+    if (this.check(TokenType.DEL)) {
+      return this.parseDelStatement();
+    }
+
     // Import
     if (this.check(TokenType.IMPORT) || this.check(TokenType.FROM)) {
       return this.parseImportStatement();
@@ -183,17 +188,56 @@ export class PyFreeParser {
     }
 
     // 할당 또는 표현식 문장
-    const expr = this.parseExpression();
+    // ✅ Phase 18: 튜플 언패킹 지원 (a, b = 1, 2)
+    // 먼저 조건 표현식만 파싱 (콤마를 고려하지 않음)
+    const expr = this.parseConditional();
     if (!expr) return null;
 
-    // 할당 연산자 확인
+    // 할당 연산자 확인 (할당 전에 콤마가 있을 수 있음)
+    let target: AST.Expression | AST.Tuple = expr;
+
+    // 콤마가 있으면 튜플 언패킹으로 처리
+    if (this.check(TokenType.COMMA) && (this.peekAhead(1)?.type === TokenType.ASSIGN || this.peekAhead(1)?.type === TokenType.NEWLINE)) {
+      // 튜플 언패킹 감지: a, b = ... 형태
+      const elements = [expr];
+      while (this.match(TokenType.COMMA)) {
+        // = 바로 앞이면 멈춤
+        if (this.check(TokenType.ASSIGN)) break;
+        if (this.check(TokenType.NEWLINE)) break;
+        const element = this.parseConditional();
+        if (element) elements.push(element);
+      }
+      target = {
+        type: 'Tuple',
+        elements,
+        line: expr.line,
+        column: expr.column,
+      } as AST.Tuple;
+    }
+
     if (this.check(TokenType.ASSIGN) || this.isCompoundAssignment()) {
       const operator = this.getAssignmentOperator();
       this.advance();
-      const value = this.parseExpression();
+      let value = this.parseConditional();
+
+      // 우변도 튜플이 가능 (a, b = 1, 2)
+      if (this.check(TokenType.COMMA)) {
+        const elements = [value];
+        while (this.match(TokenType.COMMA)) {
+          if (this.check(TokenType.NEWLINE) || this.isAtEnd()) break;
+          const element = this.parseConditional();
+          if (element) elements.push(element);
+        }
+        value = {
+          type: 'Tuple',
+          elements,
+          line: value.line,
+          column: value.column,
+        } as AST.Tuple;
+      }
       const stmt = {
         type: 'AssignmentStatement',
-        target: expr,
+        target,
         operator,
         value,
         line: expr.line,
@@ -584,7 +628,37 @@ export class PyFreeParser {
   }
 
   /**
+   * del 문 파싱
+   * del x, y, z
+   * del x[i]
+   * del x.attr
+   */
+  private parseDelStatement(): AST.DeleteStatement {
+    const startToken = this.peek();
+    this.consume(TokenType.DEL, 'del 키워드 필요');
+
+    const targets: AST.Expression[] = [];
+
+    // 첫 번째 target 파싱
+    targets.push(this.parsePostfix());
+
+    // 콤마로 구분된 추가 targets
+    while (this.match(TokenType.COMMA)) {
+      if (this.check(TokenType.NEWLINE) || this.isAtEnd()) break;
+      targets.push(this.parsePostfix());
+    }
+
+    return {
+      type: 'DeleteStatement',
+      targets,
+      line: startToken.line,
+      column: startToken.column,
+    };
+  }
+
+  /**
    * Import 파싱
+   * ✅ Phase 15: 점(.) 포함 모듈 경로 지원
    */
   private parseImportStatement(): AST.ImportStatement {
     const startToken = this.peek();
@@ -593,7 +667,12 @@ export class PyFreeParser {
 
     if (this.match(TokenType.FROM)) {
       isFromImport = true;
-      module = this.consume(TokenType.IDENTIFIER, '모듈명 필요').value;
+      // 점 포함 경로 수집: os, os.path, collections.abc 등
+      let moduleParts = [this.consume(TokenType.IDENTIFIER, '모듈명 필요').value];
+      while (this.match(TokenType.DOT)) {
+        moduleParts.push(this.consume(TokenType.IDENTIFIER, '모듈 경로 필요').value);
+      }
+      module = moduleParts.join('.');
       this.consume(TokenType.IMPORT, 'import 키워드 필요');
     } else {
       this.consume(TokenType.IMPORT, 'import 키워드 필요');
@@ -601,7 +680,14 @@ export class PyFreeParser {
 
     const names: AST.ImportName[] = [];
     do {
-      const name = this.consume(TokenType.IDENTIFIER, '이름 필요').value;
+      let nameParts = [this.consume(TokenType.IDENTIFIER, '이름 필요').value];
+      if (!isFromImport) {
+        // import 문에서는 점 경로 지원 (import os.path as ospath)
+        while (this.match(TokenType.DOT)) {
+          nameParts.push(this.consume(TokenType.IDENTIFIER, '모듈 경로 필요').value);
+        }
+      }
+      const name = nameParts.join('.');
       let asName: string | undefined;
       if (this.match(TokenType.AS)) {
         asName = this.consume(TokenType.IDENTIFIER, '별칭명 필요').value;
@@ -745,12 +831,12 @@ export class PyFreeParser {
   }
 
   private parseComparison(): AST.Expression {
-    let expr = this.parseAddition();
+    let expr = this.parseBitwiseOr();
     const startLine = expr.line;
     const startColumn = expr.column;
 
     // 비교 연산자가 없으면 단순 표현식 반환
-    if (!this.isComparisonOp()) {
+    if (!this.isComparisonOp() && !this.isInOp()) {
       return expr;
     }
 
@@ -758,10 +844,30 @@ export class PyFreeParser {
     const ops: string[] = [];
     const comparators: AST.Expression[] = [];
 
-    while (this.isComparisonOp()) {
-      const operator = this.advance().value;
+    while (this.isComparisonOp() || this.isInOp()) {
+      let operator: string;
+      if (this.check(TokenType.IN)) {
+        // x in list
+        this.advance();
+        operator = 'in';
+      } else if (this.check(TokenType.NOT)) {
+        // x not in list
+        this.advance(); // consume 'not'
+        this.consume(TokenType.IN, 'in 필요 (not in)');
+        operator = 'not in';
+      } else if (this.check(TokenType.IS)) {
+        this.advance(); // consume 'is'
+        if (this.check(TokenType.NOT)) {
+          this.advance();
+          operator = 'is not';
+        } else {
+          operator = 'is';
+        }
+      } else {
+        operator = this.advance().value;
+      }
       ops.push(operator);
-      const right = this.parseAddition();
+      const right = this.parseBitwiseOr();
       comparators.push(right);
     }
 
@@ -786,6 +892,98 @@ export class PyFreeParser {
       line: startLine,
       column: startColumn,
     } as AST.Compare;
+  }
+
+  /**
+   * Bitwise OR (|)
+   * Python 우선순위: comparisons < | < ^ < & < shifts < addition
+   */
+  private parseBitwiseOr(): AST.Expression {
+    let expr = this.parseBitwiseXor();
+
+    while (this.check(TokenType.PIPE)) {
+      const operator = this.advance().value;
+      const right = this.parseBitwiseXor();
+      expr = {
+        type: 'BinaryOp',
+        left: expr,
+        operator,
+        right,
+        line: expr.line,
+        column: expr.column,
+      } as AST.BinaryOp;
+    }
+
+    return expr;
+  }
+
+  /**
+   * Bitwise XOR (^)
+   */
+  private parseBitwiseXor(): AST.Expression {
+    let expr = this.parseBitwiseAnd();
+
+    while (this.check(TokenType.CARET)) {
+      const operator = this.advance().value;
+      const right = this.parseBitwiseAnd();
+      expr = {
+        type: 'BinaryOp',
+        left: expr,
+        operator,
+        right,
+        line: expr.line,
+        column: expr.column,
+      } as AST.BinaryOp;
+    }
+
+    return expr;
+  }
+
+  /**
+   * Bitwise AND (&)
+   */
+  private parseBitwiseAnd(): AST.Expression {
+    let expr = this.parseShift();
+
+    while (this.check(TokenType.AMPERSAND)) {
+      const operator = this.advance().value;
+      const right = this.parseShift();
+      expr = {
+        type: 'BinaryOp',
+        left: expr,
+        operator,
+        right,
+        line: expr.line,
+        column: expr.column,
+      } as AST.BinaryOp;
+    }
+
+    return expr;
+  }
+
+  /**
+   * Bitwise Shifts (<< >>)
+   */
+  private parseShift(): AST.Expression {
+    let expr = this.parseAddition();
+
+    while (
+      this.check(TokenType.LSHIFT) ||
+      this.check(TokenType.RSHIFT)
+    ) {
+      const operator = this.advance().value;
+      const right = this.parseAddition();
+      expr = {
+        type: 'BinaryOp',
+        left: expr,
+        operator,
+        right,
+        line: expr.line,
+        column: expr.column,
+      } as AST.BinaryOp;
+    }
+
+    return expr;
   }
 
   private parseAddition(): AST.Expression {
@@ -813,6 +1011,7 @@ export class PyFreeParser {
     while (
       this.check(TokenType.STAR) ||
       this.check(TokenType.SLASH) ||
+      this.check(TokenType.DOUBLE_SLASH) ||
       this.check(TokenType.PERCENT)
     ) {
       const operator = this.advance().value;
@@ -880,7 +1079,20 @@ export class PyFreeParser {
 
     while (true) {
       if (this.match(TokenType.DOT)) {
-        const property = this.consume(TokenType.IDENTIFIER, '속성명 필요').value;
+        // ✅ Phase 15: 키워드도 속성명으로 사용 가능 (re.match 등)
+        const token = this.peek();
+        let property: string;
+        if (token.type === TokenType.IDENTIFIER) {
+          property = this.advance().value;
+        } else if ([TokenType.MATCH, TokenType.RETURN, TokenType.IF, TokenType.ELSE,
+                    TokenType.FOR, TokenType.WHILE, TokenType.IMPORT, TokenType.FROM,
+                    TokenType.DEF, TokenType.CLASS, TokenType.WITH, TokenType.ASYNC,
+                    TokenType.AWAIT, TokenType.TRY, TokenType.EXCEPT].includes(token.type)) {
+          // 키워드를 속성명으로 사용
+          property = this.advance().value;
+        } else {
+          throw new Error(`속성명 필요 (받은 토큰: ${token.type})`);
+        }
         expr = {
           type: 'MemberAccess',
           object: expr,
@@ -889,12 +1101,13 @@ export class PyFreeParser {
           column: expr.column,
         } as AST.MemberAccess;
       } else if (this.match(TokenType.LBRACKET)) {
-        const index = this.parseExpression();
+        // Phase 18: 슬라이싱 지원 (a[1:3], a[:5], a[::2] 등)
+        const indexOrSlice = this.parseIndexOrSlice();
         this.consume(TokenType.RBRACKET, '] 필요');
         expr = {
           type: 'Indexing',
           object: expr,
-          index,
+          index: indexOrSlice,
           line: expr.line,
           column: expr.column,
         } as AST.Indexing;
@@ -915,6 +1128,71 @@ export class PyFreeParser {
     }
 
     return expr;
+  }
+
+  /**
+   * Phase 18: 인덱싱 또는 슬라이싱 파싱
+   * a[5] → Indexing
+   * a[1:3] → Slice(1, 3, None)
+   * a[::2] → Slice(None, None, 2)
+   * a[:5] → Slice(None, 5, None)
+   */
+  private parseIndexOrSlice(): AST.Expression | AST.Slice {
+    // 현재 위치 저장
+    const startLine = this.peek().line;
+    const startCol = this.peek().column;
+
+    // 콜론으로 시작하면 슬라이싱
+    if (this.check(TokenType.COLON)) {
+      return this.parseSlice(undefined, startLine, startCol);
+    }
+
+    // 첫 표현식 파싱
+    const firstExpr = this.parseExpression();
+
+    // 콜론이 없으면 단순 인덱싱
+    if (!this.check(TokenType.COLON)) {
+      return firstExpr;
+    }
+
+    // 콜론이 있으면 슬라이싱
+    return this.parseSlice(firstExpr, startLine, startCol);
+  }
+
+  /**
+   * Phase 18: 슬라이스 파싱
+   * start:stop:step
+   */
+  private parseSlice(
+    start: AST.Expression | undefined,
+    line: number,
+    column: number
+  ): AST.Slice {
+    // 첫 콜론 소비
+    this.consume(TokenType.COLON, ': 필요');
+
+    // stop 파싱
+    let stop: AST.Expression | undefined;
+    if (!this.check(TokenType.COLON) && !this.check(TokenType.RBRACKET)) {
+      stop = this.parseExpression();
+    }
+
+    // step 파싱 (선택사항)
+    let step: AST.Expression | undefined;
+    if (this.match(TokenType.COLON)) {
+      if (!this.check(TokenType.RBRACKET)) {
+        step = this.parseExpression();
+      }
+    }
+
+    return {
+      type: 'Slice',
+      start,
+      stop,
+      step,
+      line,
+      column,
+    } as AST.Slice;
   }
 
   private parsePrimary(): AST.Expression {
@@ -1037,20 +1315,39 @@ export class PyFreeParser {
       return this.parseLambda();
     }
 
-    // Match 표현식
+    // Match: 뒤에 '('가 오면 함수 호출(identifier), 아니면 match 표현식
     if (this.check(TokenType.MATCH)) {
+      if (this.peekAhead(1)?.type === TokenType.LPAREN) {
+        // match(...) → identifier로 처리
+        const value = this.advance();
+        return {
+          type: 'Identifier',
+          name: value.value,
+          line: value.line,
+          column: value.column,
+        } as AST.Identifier;
+      }
       return this.parseMatchExpressionPrimary();
     }
 
-    throw new Error(`예상치 못한 토큰: ${token}`);
+    const tokenStr = token ? `${token.type}:'${token.value}'` : 'EOF';
+    const location = token ? ` (${token.line}:${token.column})` : '';
+    throw new Error(`예상치 못한 토큰: ${tokenStr}${location}`);
   }
 
   /**
    * 리스트 또는 리스트 Comprehension
    */
+  private skipWhitespace(): void {
+    while (this.check(TokenType.NEWLINE) || this.check(TokenType.INDENT) || this.check(TokenType.DEDENT)) {
+      this.advance();
+    }
+  }
+
   private parseListOrComprehension(): AST.Expression {
     const startToken = this.previous();
 
+    this.skipWhitespace(); // 멀티라인 리스트 지원
     if (this.check(TokenType.RBRACKET)) {
       this.advance();
       return {
@@ -1079,10 +1376,12 @@ export class PyFreeParser {
     // 일반 리스트
     const elements = [element];
     while (this.match(TokenType.COMMA)) {
+      this.skipWhitespace(); // 멀티라인 지원
       if (this.check(TokenType.RBRACKET)) break;
       elements.push(this.parseExpression());
     }
 
+    this.skipWhitespace(); // 닫는 ] 전 줄바꿈
     this.consume(TokenType.RBRACKET, '] 필요');
     return {
       type: 'List',
@@ -1723,7 +2022,9 @@ export class PyFreeParser {
   private consume(type: TokenType, message: string): Token {
     if (this.check(type)) return this.advance();
     const token = this.peek();
-    throw new Error(`${message} (받은 토큰: ${token})`);
+    const tokenStr = token ? `${token.type}:'${token.value}'` : 'EOF';
+    const location = token ? ` (${token.line}:${token.column})` : '';
+    throw new Error(`${message} (받은 토큰: ${tokenStr}${location})`);
   }
 
   private isAtEnd(): boolean {
@@ -1738,9 +2039,14 @@ export class PyFreeParser {
       this.check(TokenType.GREATER_THAN) ||
       this.check(TokenType.LESS_EQUAL) ||
       this.check(TokenType.GREATER_EQUAL) ||
-      // IN 토큰 제거: for-in, comprehension 문맥에서만 처리
       this.check(TokenType.IS)
     );
+  }
+
+  private isInOp(): boolean {
+    // x in list (membership test)
+    // 단, for 문 내부에서는 안 됨 - parseForLoop이 직접 IN 소비
+    return this.check(TokenType.IN) || this.check(TokenType.NOT);
   }
 
   private isCompoundAssignment(): boolean {
@@ -1748,7 +2054,15 @@ export class PyFreeParser {
       this.check(TokenType.PLUS_ASSIGN) ||
       this.check(TokenType.MINUS_ASSIGN) ||
       this.check(TokenType.STAR_ASSIGN) ||
-      this.check(TokenType.SLASH_ASSIGN)
+      this.check(TokenType.SLASH_ASSIGN) ||
+      this.check(TokenType.DOUBLE_SLASH_ASSIGN) ||
+      this.check(TokenType.PERCENT_ASSIGN) ||
+      this.check(TokenType.POWER_ASSIGN) ||
+      this.check(TokenType.AMPERSAND_ASSIGN) ||
+      this.check(TokenType.PIPE_ASSIGN) ||
+      this.check(TokenType.CARET_ASSIGN) ||
+      this.check(TokenType.LSHIFT_ASSIGN) ||
+      this.check(TokenType.RSHIFT_ASSIGN)
     );
   }
 
@@ -1757,12 +2071,28 @@ export class PyFreeParser {
     | 'plus_assign'
     | 'minus_assign'
     | 'star_assign'
-    | 'slash_assign' {
+    | 'slash_assign'
+    | 'floordiv_assign'
+    | 'percent_assign'
+    | 'power_assign'
+    | 'bitand_assign'
+    | 'bitor_assign'
+    | 'bitxor_assign'
+    | 'lshift_assign'
+    | 'rshift_assign' {
     if (this.check(TokenType.ASSIGN)) return 'assign';
     if (this.check(TokenType.PLUS_ASSIGN)) return 'plus_assign';
     if (this.check(TokenType.MINUS_ASSIGN)) return 'minus_assign';
     if (this.check(TokenType.STAR_ASSIGN)) return 'star_assign';
     if (this.check(TokenType.SLASH_ASSIGN)) return 'slash_assign';
+    if (this.check(TokenType.DOUBLE_SLASH_ASSIGN)) return 'floordiv_assign';
+    if (this.check(TokenType.PERCENT_ASSIGN)) return 'percent_assign';
+    if (this.check(TokenType.POWER_ASSIGN)) return 'power_assign';
+    if (this.check(TokenType.AMPERSAND_ASSIGN)) return 'bitand_assign';
+    if (this.check(TokenType.PIPE_ASSIGN)) return 'bitor_assign';
+    if (this.check(TokenType.CARET_ASSIGN)) return 'bitxor_assign';
+    if (this.check(TokenType.LSHIFT_ASSIGN)) return 'lshift_assign';
+    if (this.check(TokenType.RSHIFT_ASSIGN)) return 'rshift_assign';
     throw new Error('할당 연산자 필요');
   }
 }

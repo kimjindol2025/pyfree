@@ -10,6 +10,7 @@
  */
 
 import { IRProgram, Instruction, Opcode, IRFunction } from './ir';
+import { ModuleResolver } from './module-resolver';
 
 /**
  * 런타임 값
@@ -29,6 +30,7 @@ interface Frame {
   returnResultReg?: number;        // 반환값 저장할 호출자 레지스터
   callerRegisters?: PyFreeValue[]; // 호출자 레지스터 배열 참조
   closureEnv?: Map<string, PyFreeValue>; // ✅ Phase 10: 클로저 환경
+  moduleGlobals?: Map<string, any>; // ✅ Phase 15.5: 모듈의 전역 상태
 }
 
 /**
@@ -59,24 +61,51 @@ export class VM {
   private globals: Map<string, PyFreeValue> = new Map();
   private output: string[] = [];
   private halted: boolean = false;
+  private baseDir: string;  // ✅ Phase 15
+  private moduleResolver: ModuleResolver;  // ✅ Phase 15
+  private sharedGlobals?: Map<string, any>;  // ✅ Phase 15.5: 모듈 공유 전역 상태
+  private sharedModuleResolver?: ModuleResolver;  // ✅ Phase 15.5: 순환 임포트 감지용
 
-  constructor(program: IRProgram) {
+  constructor(program: IRProgram, baseDir?: string, sharedGlobals?: Map<string, any>, sharedModuleResolver?: ModuleResolver) {
     this.program = program;
+    this.baseDir = baseDir || process.cwd();
+    this.sharedGlobals = sharedGlobals;  // ✅ Phase 15.5
+    this.sharedModuleResolver = sharedModuleResolver;  // ✅ Phase 15.5
+
+    // ModuleResolver 공유 또는 새로 생성
+    if (this.sharedModuleResolver) {
+      this.moduleResolver = this.sharedModuleResolver;
+    } else {
+      this.moduleResolver = new ModuleResolver(this.baseDir);
+      // ✅ Phase 15: 모듈 로더 등록
+      this.moduleResolver.setLoader((source: string, filePath: string) => {
+        return this.createModuleLoader(source, filePath);
+      });
+    }
+
+    // ✅ Phase 15.5: sharedGlobals 또는 독립 globals 선택
+    if (this.sharedGlobals) {
+      this.globals = this.sharedGlobals;
+    }
+    // 항상 program globals와 native library 추가 (sharedGlobals 포함)
     this.program.globals.forEach((value, key) => {
       this.globals.set(key, value);
     });
 
-    // 네이티브 라이브러리 함수 등록
+    // 네이티브 라이브러리 함수 등록 (항상)
     Object.entries(NativeLibrary).forEach(([name, fn]) => {
-      this.globals.set(name, fn);
+      if (!this.globals.has(name)) {  // 이미 있으면 덮어쓰지 않음
+        this.globals.set(name, fn);
+      }
     });
 
-    // 초기 프레임
+    // ✅ Phase 15.5: 초기 프레임에 moduleGlobals 설정
     this.frameStack.push({
       code: program.code,
       pc: 0,
       registers: this.registers,
       locals: new Map(),
+      moduleGlobals: this.globals,  // 현재 globals 참조
     });
   }
 
@@ -115,22 +144,38 @@ export class VM {
    * 명령어 실행
    */
   private executeInstruction(instr: Instruction, frame: Frame): void {
-    const [a, b, c] = instr.args;
+    const [a, b, c, d] = instr.args;
     const aNum = typeof a === 'number' ? a : 0;
     const bNum = typeof b === 'number' ? b : 0;
     const cNum = typeof c === 'number' ? c : 0;
+    const dNum = typeof d === 'number' ? d : 0;
 
     switch (instr.op) {
       // 상수
       case Opcode.LOAD_CONST:
         // 함수 전용 상수 풀 우선, 없으면 메인 프로그램 상수 사용
         const constants = frame.function?.constants || this.program.constants;
-        frame.registers[aNum] = constants[bNum];
+        const constValue = constants[bNum];
+
+        // ✅ Phase 15.5: 함수 로드 시 모듈 globals 정보 저장
+        if (constValue && typeof constValue === 'object' && constValue.code && frame.moduleGlobals) {
+          constValue.__module_globals__ = frame.moduleGlobals;
+        }
+        frame.registers[aNum] = constValue;
         break;
 
-      case Opcode.LOAD_GLOBAL:
-        frame.registers[aNum] = this.globals.get(String(b));
+      case Opcode.LOAD_GLOBAL: {
+        // ✅ Phase 15.5: frame의 moduleGlobals 사용 (없으면 VM globals 사용)
+        const globals_load = frame.moduleGlobals || this.globals;
+        const varName = String(b);
+        const value = globals_load.get(varName);
+        // ✅ undefined 변수 에러 발생
+        if (value === undefined) {
+          throw new Error(`NameError: name '${varName}' is not defined`);
+        }
+        frame.registers[aNum] = value;
         break;
+      }
 
       case Opcode.LOAD_FAST:
         frame.registers[aNum] = frame.locals.get(String(b));
@@ -149,9 +194,14 @@ export class VM {
         break;
 
       // 저장
-      case Opcode.STORE_GLOBAL:
-        this.globals.set(String(a), frame.registers[bNum]);
+      case Opcode.STORE_GLOBAL: {
+        // ✅ Phase 15.5: frame의 moduleGlobals 사용 (없으면 VM globals 사용)
+        const globals_store = frame.moduleGlobals || this.globals;
+        const varName = String(a);
+        const value = frame.registers[bNum];
+        globals_store.set(varName, value);
         break;
+      }
 
       case Opcode.STORE_FAST:
         frame.locals.set(String(a), frame.registers[bNum]);
@@ -218,6 +268,41 @@ export class VM {
         );
         break;
 
+      case Opcode.FLOORDIV:
+        if (frame.registers[cNum] === 0) {
+          throw new Error('ZeroDivisionError: integer division or modulo by zero');
+        }
+        frame.registers[aNum] = Math.floor(
+          frame.registers[bNum] / frame.registers[cNum]
+        );
+        break;
+
+      // 비트 연산
+      case Opcode.BITAND:
+        frame.registers[aNum] =
+          (frame.registers[bNum] as number) & (frame.registers[cNum] as number);
+        break;
+
+      case Opcode.BITOR:
+        frame.registers[aNum] =
+          (frame.registers[bNum] as number) | (frame.registers[cNum] as number);
+        break;
+
+      case Opcode.BITXOR:
+        frame.registers[aNum] =
+          (frame.registers[bNum] as number) ^ (frame.registers[cNum] as number);
+        break;
+
+      case Opcode.LSHIFT:
+        frame.registers[aNum] =
+          (frame.registers[bNum] as number) << (frame.registers[cNum] as number);
+        break;
+
+      case Opcode.RSHIFT:
+        frame.registers[aNum] =
+          (frame.registers[bNum] as number) >> (frame.registers[cNum] as number);
+        break;
+
       // 단항 연산
       case Opcode.NEG:
         frame.registers[aNum] = -frame.registers[bNum];
@@ -225,6 +310,10 @@ export class VM {
 
       case Opcode.NOT:
         frame.registers[aNum] = !frame.registers[bNum];
+        break;
+
+      case Opcode.BITNOT:
+        frame.registers[aNum] = ~(frame.registers[bNum] as number);
         break;
 
       // 비교
@@ -317,6 +406,10 @@ export class VM {
         this.buildDict(frame, aNum, bNum, instr.args);
         break;
 
+      case Opcode.BUILD_SET:
+        this.buildSet(frame, aNum, bNum, instr.args);
+        break;
+
       case Opcode.INDEX_GET: {
         const obj = frame.registers[bNum];
         const key = frame.registers[cNum];
@@ -346,9 +439,53 @@ export class VM {
         frame.registers[aNum][frame.registers[bNum]] = frame.registers[cNum];
         break;
 
+      // Phase 18: 슬라이싱
+      case Opcode.MAKE_SLICE: {
+        // r[a] = Slice(start=r[b], stop=r[c], step=r[d])
+        const start = frame.registers[bNum];
+        const stop = frame.registers[cNum];
+        const step = frame.registers[dNum]; // 4번째 인자
+        frame.registers[aNum] = { __type__: 'slice', start, stop, step };
+        break;
+      }
+
+      case Opcode.SLICE_GET: {
+        // r[a] = r[b][slice_r[c]]
+        const obj = frame.registers[bNum];
+        const sliceObj = frame.registers[cNum];
+
+        if (sliceObj.__type__ === 'slice') {
+          const start = sliceObj.start === null || sliceObj.start === undefined ? 0 : Number(sliceObj.start);
+          const step = sliceObj.step === null || sliceObj.step === undefined ? 1 : Number(sliceObj.step);
+          let stop = sliceObj.stop === null || sliceObj.stop === undefined ? (Array.isArray(obj) ? obj.length : obj.length) : Number(sliceObj.stop);
+
+          if (Array.isArray(obj)) {
+            frame.registers[aNum] = obj.slice(start, stop);
+          } else if (typeof obj === 'string') {
+            frame.registers[aNum] = obj.slice(start, stop);
+          } else {
+            throw new Error(`TypeError: '${typeof obj}' object is not subscriptable`);
+          }
+        } else {
+          // 슬라이스가 아니면 일반 인덱싱
+          frame.registers[aNum] = obj[sliceObj];
+        }
+        break;
+      }
+
       case Opcode.ATTR_GET: {
         const obj = frame.registers[bNum];
         const attr = String(c);
+
+        // ✅ Phase 15: 모듈 속성 접근 (import math → math.sqrt)
+        if (this.isModule(obj)) {
+          const val = obj.__exports__?.get(attr);
+          if (val === undefined) {
+            throw new Error(`AttributeError: module '${obj.__name__}' has no attribute '${attr}'`);
+          }
+          frame.registers[aNum] = val;
+          break;
+        }
 
         // ✅ Phase 13: 인스턴스 속성/메서드 접근
         if (obj !== null && typeof obj === 'object' && obj.__type__ === 'instance') {
@@ -436,6 +573,33 @@ export class VM {
         const propertyName = String(instr.args[1]);
         const value = frame.registers[cNum];
         obj[propertyName] = value;
+        break;
+      }
+
+      case Opcode.DELETE_NAME: {
+        // del x: 변수 삭제
+        const varName = instr.args[0] as string;
+        frame.locals.delete(varName);
+        this.globals.delete(varName);
+        break;
+      }
+
+      case Opcode.DELETE_ITEM: {
+        // del x[i]: 항목 삭제
+        const obj = frame.registers[aNum];
+        const key = frame.registers[bNum];
+        if (Array.isArray(obj)) {
+          const idx = Number(key);
+          if (idx >= 0 && idx < obj.length) {
+            obj.splice(idx, 1);
+          } else {
+            this.raiseException({ type: 'IndexError', message: `list index out of range`, args: [key] });
+          }
+        } else if (typeof obj === 'object' && obj !== null) {
+          delete obj[String(key)];
+        } else {
+          this.raiseException({ type: 'TypeError', message: `'${typeof obj}' object does not support item deletion`, args: [] });
+        }
         break;
       }
 
@@ -533,6 +697,32 @@ export class VM {
         };
         break;
       }
+
+      // ✅ Phase 15: 모듈 임포트
+      case Opcode.IMPORT_MODULE: {
+        const moduleNameIdx = bNum;
+        const constants = frame.function?.constants || this.program.constants;
+        const moduleName = String(constants[moduleNameIdx]);
+        frame.registers[aNum] = this.resolveModule(moduleName);
+        break;
+      }
+
+      case Opcode.IMPORT_FROM: {
+        const moduleObj = frame.registers[bNum];
+        const symbolIdx = cNum;
+        const constants = frame.function?.constants || this.program.constants;
+        const symbol = String(constants[symbolIdx]);
+
+        if (!this.isModule(moduleObj)) {
+          throw new Error(`ImportError: not a module`);
+        }
+        const value = moduleObj.__exports__?.get(symbol);
+        if (value === undefined) {
+          throw new Error(`ImportError: cannot import name '${symbol}' from '${moduleObj.__name__}'`);
+        }
+        frame.registers[aNum] = value;
+        break;
+      }
     }
   }
 
@@ -564,12 +754,15 @@ export class VM {
 
     // IR 함수
     if (typeof func === 'object' && func.code) {
+      // ✅ Phase 15.5: 함수가 정의된 모듈의 globals 사용 (없으면 현재 frame의 globals)
+      const moduleGlobals = func.__module_globals__ || frame.moduleGlobals;
       const newFrame: Frame = {
         function: func,
         code: func.code,
         pc: 0,
-        registers: new Array(256),
+        registers: new Array(Math.max((func?.maxReg || 0) + 1, 256)),
         locals: new Map(),
+        moduleGlobals: moduleGlobals,  // ✅ Phase 15.5
       };
 
       // 파라미터 전달
@@ -621,11 +814,12 @@ export class VM {
           function: initMethod,
           code: initMethod.code,
           pc: 0,
-          registers: new Array(256),
+          registers: new Array(Math.max((func?.maxReg || 0) + 1, 256)),
           locals: new Map(),
           returnResultReg: undefined,
           callerRegisters: undefined,
           closureEnv: initMethod.closureEnv,
+          moduleGlobals: frame.moduleGlobals,  // ✅ Phase 15.5
         };
         // self = instance, 나머지 args 전달
         newFrame.locals.set(initMethod.paramNames[0], instance);
@@ -645,11 +839,12 @@ export class VM {
         function: method,
         code: method.code,
         pc: 0,
-        registers: new Array(256),
+        registers: new Array(Math.max((func?.maxReg || 0) + 1, 256)),
         locals: new Map(),
         returnResultReg: resultReg,
         callerRegisters: frame.registers,
         closureEnv: method.closureEnv,
+        moduleGlobals: frame.moduleGlobals,  // ✅ Phase 15.5
       };
       newFrame.locals.set(method.paramNames[0], self);
       for (let i = 1; i < method.paramCount && i - 1 < argValues.length; i++) {
@@ -661,15 +856,18 @@ export class VM {
 
     // IR 함수
     if (typeof func === 'object' && func.code) {
+      // ✅ Phase 15.5: 함수가 정의된 모듈의 globals 사용 (없으면 현재 frame의 globals)
+      const moduleGlobals = func.__module_globals__ || frame.moduleGlobals;
       const newFrame: Frame = {
         function: func,
         code: func.code,
         pc: 0,
-        registers: new Array(256),
+        registers: new Array(Math.max((func?.maxReg || 0) + 1, 256)),
         locals: new Map(),
         returnResultReg: resultReg,       // 반환값 목적지 저장
         callerRegisters: frame.registers, // 호출자 레지스터 참조
         closureEnv: func.closureEnv,      // ✅ Phase 10.3: 함수의 snapshot된 closureEnv 전달
+        moduleGlobals: moduleGlobals,  // ✅ Phase 15.5: 모듈 전역 상태 전파
       };
 
       // 파라미터 전달
@@ -769,6 +967,23 @@ export class VM {
   }
 
   /**
+   * Set 생성
+   */
+  private buildSet(frame: Frame, dst: number, count: number, args: any[]): void {
+    const setObj = {
+      __type__: 'set',
+      elements: new Set<any>()
+    };
+    // args = [dst, count, elem0_reg, elem1_reg, ...]
+    for (let i = 0; i < count; i++) {
+      const elemReg = args[2 + i];
+      const elem = frame.registers[elemReg];
+      setObj.elements.add(elem);
+    }
+    frame.registers[dst] = setObj;
+  }
+
+  /**
    * 포함 검사
    */
   private checkIn(value: PyFreeValue, container: PyFreeValue): boolean {
@@ -778,6 +993,10 @@ export class VM {
 
     if (typeof container === 'string') {
       return container.includes(String(value));
+    }
+
+    if (container && typeof container === 'object' && container.__type__ === 'set') {
+      return container.elements.has(value);
     }
 
     if (typeof container === 'object') {
@@ -812,6 +1031,61 @@ export class VM {
   }
 
   /**
+   * ✅ Phase 15: 모듈 로더 (사용자 모듈 컴파일)
+   * ✅ Phase 15.5: 모듈 전역 상태 공유
+   */
+  private createModuleLoader(source: string, filePath: string): Map<string, any> {
+    const { PyFreeLexer } = require('../lexer');
+    const { PyFreeParser } = require('../parser');
+    const { IRCompiler } = require('./ir');
+
+    // ✅ Phase 15.5: 모듈별 전역 상태 조회 또는 생성
+    const moduleGlobals = this.moduleResolver.getOrCreateModuleGlobals(filePath);
+
+    const tokens = new PyFreeLexer(source).tokenize();
+    const ast = new PyFreeParser(tokens).parse();
+    const compiler = new IRCompiler();
+    const program = compiler.compile(ast);
+    // ✅ sharedGlobals + sharedModuleResolver 전달 (순환 임포트 감지)
+    const vm = new VM(program, this.baseDir, moduleGlobals, this.moduleResolver);
+    vm.execute();
+    return vm.getGlobals();
+  }
+
+  /**
+   * ✅ Phase 15: 모듈 로드 및 모듈 객체 생성
+   */
+  private resolveModule(moduleName: string): any {
+    const STDLIB = new Set(['math', 'os', 'os.path', 'sys', 'json', 'datetime',
+      'random', 'collections', 'io', 're', 'string', 'http']);
+
+    const info = STDLIB.has(moduleName)
+      ? this.moduleResolver.loadStdlibModule(moduleName)
+      : this.moduleResolver.loadModule(moduleName);
+
+    return {
+      __type__: 'module',
+      __name__: moduleName,
+      __exports__: info.exports,
+    };
+  }
+
+  /**
+   * ✅ Phase 15: module 객체 타입 가드
+   */
+  private isModule(obj: any): boolean {
+    return obj !== null && typeof obj === 'object' && obj?.__type__ === 'module';
+  }
+
+  /**
+   * ✅ Phase 15: 전역 변수 반환 (모듈 로딩용)
+   * ✅ Phase 15.5: 원본 Map 반환 (함수의 __module_globals__ 공유 위해)
+   */
+  getGlobals(): Map<string, any> {
+    return this.globals;  // 복사본이 아닌 원본 반환
+  }
+
+  /**
    * 전역 변수 설정
    */
   setGlobal(name: string, value: PyFreeValue): void {
@@ -832,7 +1106,14 @@ export class VM {
 export const NativeLibrary = {
   // 출력
   print: (...args: PyFreeValue[]): null => {
-    console.log(args.map((a) => String(a)).join(' '));
+    const formatted = args.map((a) => {
+      if (a && typeof a === 'object' && a.__type__ === 'set') {
+        const elements = Array.from(a.elements);
+        return `{${elements.join(', ')}}`;
+      }
+      return String(a);
+    });
+    console.log(formatted.join(' '));
     return null;
   },
 
@@ -840,6 +1121,7 @@ export const NativeLibrary = {
   len: (obj: PyFreeValue): number => {
     if (Array.isArray(obj)) return obj.length;
     if (typeof obj === 'string') return obj.length;
+    if (obj && typeof obj === 'object' && obj.__type__ === 'set') return obj.elements.size;
     if (typeof obj === 'object') return Object.keys(obj).length;
     return 0;
   },
@@ -870,6 +1152,7 @@ export const NativeLibrary = {
     if (typeof value === 'object' && value?.__type__ === 'instance') return value.__class__?.__name__ || 'instance';
     if (typeof value === 'object' && value?.__type__ === 'class') return 'type';
     if (typeof value === 'object' && value?.__type__ === 'bound_method') return 'method';
+    if (typeof value === 'object' && value?.__type__ === 'set') return 'set';
     if (Array.isArray(value)) return 'list';
     if (typeof value === 'string') return 'str';
     if (typeof value === 'number') return Number.isInteger(value) ? 'int' : 'float';
@@ -1081,6 +1364,10 @@ export const NativeLibrary = {
   repr: (obj: any): string => {
     if (obj === null) return 'None';
     if (typeof obj === 'string') return `'${obj}'`;
+    if (obj && typeof obj === 'object' && obj.__type__ === 'set') {
+      const elements = Array.from(obj.elements).map(x => NativeLibrary.repr(x)).join(', ');
+      return `{${elements}}`;
+    }
     if (Array.isArray(obj)) return `[${obj.map(x => NativeLibrary.repr(x)).join(', ')}]`;
     return String(obj);
   },

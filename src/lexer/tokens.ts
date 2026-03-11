@@ -23,6 +23,7 @@ export enum TokenType {
   BREAK = 'BREAK',          // break
   CONTINUE = 'CONTINUE',    // continue
   PASS = 'PASS',            // pass
+  DEL = 'DEL',              // del
 
   ASYNC = 'ASYNC',          // async
   AWAIT = 'AWAIT',          // await
@@ -87,11 +88,27 @@ export enum TokenType {
   POWER = 'POWER',          // ** or ^
   DOUBLE_SLASH = 'DOUBLE_SLASH',  // //
 
+  // 비트 연산자 (210-215)
+  AMPERSAND = 'AMPERSAND',  // &
+  PIPE = 'PIPE',            // |
+  CARET = 'CARET',          // ^
+  TILDE = 'TILDE',          // ~
+  LSHIFT = 'LSHIFT',        // <<
+  RSHIFT = 'RSHIFT',        // >>
+
   ASSIGN = 'ASSIGN',        // =
   PLUS_ASSIGN = 'PLUS_ASSIGN',      // +=
   MINUS_ASSIGN = 'MINUS_ASSIGN',    // -=
   STAR_ASSIGN = 'STAR_ASSIGN',      // *=
   SLASH_ASSIGN = 'SLASH_ASSIGN',    // /=
+  DOUBLE_SLASH_ASSIGN = 'DOUBLE_SLASH_ASSIGN',  // //=
+  PERCENT_ASSIGN = 'PERCENT_ASSIGN',            // %=
+  POWER_ASSIGN = 'POWER_ASSIGN',                // **=
+  AMPERSAND_ASSIGN = 'AMPERSAND_ASSIGN',        // &=
+  PIPE_ASSIGN = 'PIPE_ASSIGN',                  // |=
+  CARET_ASSIGN = 'CARET_ASSIGN',                // ^=
+  LSHIFT_ASSIGN = 'LSHIFT_ASSIGN',              // <<=
+  RSHIFT_ASSIGN = 'RSHIFT_ASSIGN',              // >>=
 
   // 비교 (220-229)
   EQUAL_EQUAL = 'EQUAL_EQUAL',      // ==
@@ -124,10 +141,6 @@ export enum TokenType {
   ARROW = 'ARROW',          // -> or =>
   DOUBLE_ARROW = 'DOUBLE_ARROW',    // =>
   FAT_ARROW = 'FAT_ARROW',  // =>
-  PIPE = 'PIPE',            // |
-  AMPERSAND = 'AMPERSAND',  // &
-  CARET = 'CARET',          // ^
-  TILDE = 'TILDE',          // ~
   QUESTION = 'QUESTION',    // ?
   UNDERSCORE = 'UNDERSCORE',        // _
 
@@ -165,6 +178,7 @@ export const PYTHON_KEYWORDS = new Map<string, TokenType>([
   ['break', TokenType.BREAK],
   ['continue', TokenType.CONTINUE],
   ['pass', TokenType.PASS],
+  ['del', TokenType.DEL],
   ['async', TokenType.ASYNC],
   ['await', TokenType.AWAIT],
   ['yield', TokenType.YIELD],
@@ -262,10 +276,13 @@ export const TokenClassification = {
     [
       TokenType.PLUS, TokenType.MINUS, TokenType.STAR,
       TokenType.SLASH, TokenType.PERCENT, TokenType.POWER,
+      TokenType.DOUBLE_SLASH,
       TokenType.EQUAL_EQUAL, TokenType.NOT_EQUAL,
       TokenType.LESS_THAN, TokenType.GREATER_THAN,
       TokenType.LESS_EQUAL, TokenType.GREATER_EQUAL,
       TokenType.AND, TokenType.OR, TokenType.NOT,
+      TokenType.AMPERSAND, TokenType.PIPE, TokenType.CARET,
+      TokenType.TILDE, TokenType.LSHIFT, TokenType.RSHIFT,
     ].includes(type),
 
   isLiteral: (type: TokenType): boolean =>

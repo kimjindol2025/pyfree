@@ -1,0 +1,5 @@
+# Phase 15 Test 4: os.path module
+from os.path import join
+
+p = join("/tmp", "test.txt")
+print(p)           # /tmp/test.txt

@@ -32,8 +32,9 @@ try {
   const compiler = new IRCompiler();
   const irProgram = compiler.compile(ast);
 
-  // VM 실행
-  const vm = new VM(irProgram);
+  // ✅ Phase 15: baseDir 전달
+  const baseDir = path.dirname(path.resolve(filePath));
+  const vm = new VM(irProgram, baseDir);
   vm.execute();
 
   const output = vm.getOutput();

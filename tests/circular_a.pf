@@ -1,0 +1,4 @@
+# Circular test: a.pf imports circular_b
+import circular_b as b
+x = 1
+print("a loaded, x =", x)
