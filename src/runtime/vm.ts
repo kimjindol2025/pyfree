@@ -1351,8 +1351,16 @@ export const NativeLibrary = {
 
   // 수학
   abs: (value: number): number => Math.abs(value),
-  max: (...args: number[]): number => Math.max(...args),
-  min: (...args: number[]): number => Math.min(...args),
+  max: (...args: any[]): number => {
+    // Handle both max(a, b, c) and max([a, b, c]) forms
+    const values = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+    return Math.max(...(values as number[]));
+  },
+  min: (...args: any[]): number => {
+    // Handle both min(a, b, c) and min([a, b, c]) forms
+    const values = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+    return Math.min(...(values as number[]));
+  },
   pow: (base: number, exp: number): number => Math.pow(base, exp),
   sqrt: (value: number): number => Math.sqrt(value),
 
@@ -1536,5 +1544,100 @@ export const NativeLibrary = {
 
   callable: (obj: any): boolean => {
     return typeof obj === 'function';
+  },
+
+  // ✅ Phase 23: Stdlib 확장 - itertools
+  chain: (...iterables: any[][]): any[] => {
+    const result: any[] = [];
+    for (const iterable of iterables) {
+      if (Array.isArray(iterable)) {
+        result.push(...iterable);
+      }
+    }
+    return result;
+  },
+
+  // ✅ Phase 23: Stdlib 확장 - functools
+  reduce: (func: (acc: any, x: any) => any, iterable: any[], initial?: any): any => {
+    if (!Array.isArray(iterable)) return initial;
+    let acc = initial !== undefined ? initial : iterable[0];
+    const start = initial !== undefined ? 0 : 1;
+    for (let i = start; i < iterable.length; i++) {
+      acc = func(acc, iterable[i]);
+    }
+    return acc;
+  },
+
+  // ✅ Phase 23: Stdlib 확장 - collections
+  Counter: (iterable?: any[]): Record<string, number> => {
+    const result: Record<string, number> = {};
+    if (Array.isArray(iterable)) {
+      for (const item of iterable) {
+        const key = String(item);
+        result[key] = (result[key] || 0) + 1;
+      }
+    }
+    return result;
+  },
+
+  // ✅ Phase 23: Stdlib 확장 - hashlib
+  md5: (message: string): string => {
+    // Simple hash simulation (not real MD5)
+    let hash = 5381;
+    for (let i = 0; i < message.length; i++) {
+      hash = ((hash << 5) + hash) + message.charCodeAt(i);
+    }
+    return Math.abs(hash).toString(16);
+  },
+
+  // ✅ Phase 23: Stdlib 확장 - base64
+  b64encode: (data: string): string => {
+    return Buffer.from(data, 'utf-8').toString('base64');
+  },
+
+  b64decode: (data: string): string => {
+    return Buffer.from(data, 'base64').toString('utf-8');
+  },
+
+  // ✅ Phase 23: Stdlib 확장 - math
+  gcd: (a: number, b: number): number => {
+    if (b === 0) return a;
+    return NativeLibrary.gcd(b, a % b);
+  },
+
+  lcm: (a: number, b: number): number => {
+    return Math.abs(a * b) / NativeLibrary.gcd(a, b);
+  },
+
+  factorial: (n: number): number => {
+    if (n < 0) throw new Error('factorial not defined for negative values');
+    if (n === 0 || n === 1) return 1;
+    return n * NativeLibrary.factorial(n - 1);
+  },
+
+  // ✅ Phase 23: Stdlib 확장 - 유틸리티
+  range_iter: (start: number, end?: number, step?: number) => {
+    if (end === undefined) {
+      [end, start] = [start, 0];
+    }
+    if (step === undefined) step = 1;
+
+    return {
+      __type__: 'range_iterator',
+      current: start,
+      end,
+      step,
+      __next__(): number {
+        if (this.step > 0 && this.current >= this.end) {
+          throw new Error('StopIteration');
+        }
+        if (this.step < 0 && this.current <= this.end) {
+          throw new Error('StopIteration');
+        }
+        const value = this.current;
+        this.current += this.step;
+        return value;
+      },
+    };
   },
 };
