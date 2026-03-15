@@ -158,6 +158,10 @@ export enum Opcode {
   GET_ITER = 'GET_ITER',          // r[a] = iter(r[b])  → __iter__() 호출
   FOR_ITER = 'FOR_ITER',          // r[a] = next(r[b]) → 종료면 goto offset / 그외 계속
 
+  // ✅ Phase 22: 제너레이터
+  YIELD = 'YIELD',                // 값 산출: yield r[a] → 값 반환 + 일시 정지
+  YIELD_FROM = 'YIELD_FROM',      // 서브 제너레이터: yield from r[a]
+
   // 예외 처리
   SETUP_TRY = 'SETUP_TRY',        // try 설정: push handler
   POP_TRY = 'POP_TRY',            // try 해제: pop handler
@@ -1487,6 +1491,10 @@ export class IRCompiler {
       case 'Lambda':
         return this.compileLambda(expr);
 
+      // ✅ Phase 22: Yield 표현식
+      case 'YieldExpression':
+        return this.compileYield(expr);
+
       default:
         // 알 수 없는 표현식은 None 반환
         this.builder.emit(Opcode.LOAD_NONE, [resultReg]);
@@ -2323,6 +2331,33 @@ export class IRCompiler {
       this.builder.emit(Opcode.MAKE_FUNCTION, [closureReg, resultReg]);
       this.freeRegister(resultReg);
       return closureReg;
+    }
+
+    return resultReg;
+  }
+
+  /**
+   * Yield 표현식 컴파일 (✅ Phase 22)
+   */
+  private compileYield(expr: any): number {
+    const resultReg = this.allocRegister();
+
+    if (expr.isFrom) {
+      // yield from iterable
+      const iterReg = this.compileExpression(expr.value);
+      this.builder.emit(Opcode.YIELD_FROM, [resultReg, iterReg]);
+      this.freeRegister(iterReg);
+    } else {
+      // yield value (또는 bare yield)
+      if (expr.value) {
+        const valueReg = this.compileExpression(expr.value);
+        this.builder.emit(Opcode.YIELD, [resultReg, valueReg]);
+        this.freeRegister(valueReg);
+      } else {
+        // bare yield → None 반환
+        this.builder.emit(Opcode.LOAD_NONE, [resultReg]);
+        this.builder.emit(Opcode.YIELD, [resultReg, resultReg]);
+      }
     }
 
     return resultReg;

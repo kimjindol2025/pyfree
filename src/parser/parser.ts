@@ -1418,6 +1418,11 @@ export class PyFreeParser {
       return this.parseDictOrSet();
     }
 
+    // ✅ Phase 22: Yield 표현식
+    if (this.check(TokenType.YIELD)) {
+      return this.parseYield();
+    }
+
     // Lambda
     if (this.check(TokenType.LAMBDA)) {
       return this.parseLambda();
@@ -1612,6 +1617,39 @@ export class PyFreeParser {
       line: startToken.line,
       column: startToken.column,
     };
+  }
+
+  /**
+   * Yield 표현식 파싱 (✅ Phase 22)
+   * yield value
+   * yield from iterable
+   */
+  private parseYield(): AST.YieldExpression {
+    const startToken = this.peek();
+    this.consume(TokenType.YIELD, 'yield 키워드 필요');
+
+    let isFrom = false;
+    let value: AST.Expression | undefined;
+
+    // yield from 확인
+    if (this.match(TokenType.FROM)) {
+      isFrom = true;
+      value = this.parseExpression();
+    } else if (!this.check(TokenType.NEWLINE) && !this.check(TokenType.SEMICOLON) &&
+               !this.check(TokenType.EOF) && !this.check(TokenType.RPAREN) &&
+               !this.check(TokenType.RBRACKET) && !this.check(TokenType.RBRACE) &&
+               !this.check(TokenType.COMMA)) {
+      // yield value (선택적)
+      value = this.parseExpression();
+    }
+
+    return {
+      type: 'YieldExpression',
+      value,
+      isFrom,
+      line: startToken.line,
+      column: startToken.column,
+    } as AST.YieldExpression;
   }
 
   /**

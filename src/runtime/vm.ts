@@ -694,6 +694,38 @@ export class VM {
         break;
       }
 
+      // ✅ Phase 22: 제너레이터
+      case Opcode.YIELD: {
+        const resultReg = aNum;
+        const valueReg = bNum;
+        // 현재는 간단한 구현: 값을 저장만 함
+        // 실제 제너레이터 구현은 더 복잡함
+        frame.registers[resultReg] = frame.registers[valueReg];
+        break;
+      }
+
+      case Opcode.YIELD_FROM: {
+        const resultReg = aNum;
+        const iterReg = bNum;
+        // yield from: 서브 제너레이터에 위임
+        const iterator = frame.registers[iterReg];
+        try {
+          if (!iterator || !iterator.__next__) {
+            throw new Error('TypeError: iterator object has no __next__');
+          }
+          const value = iterator.__next__();
+          frame.registers[resultReg] = value;
+        } catch (e) {
+          if (e instanceof Error && e.message === 'StopIteration') {
+            // 서브 제너레이터 종료
+            frame.registers[resultReg] = null;
+          } else {
+            throw e;
+          }
+        }
+        break;
+      }
+
       // 기타
       case Opcode.NOP:
         break;
