@@ -1315,6 +1315,8 @@ export const NativeLibrary = {
     if (typeof value === 'object' && value?.__type__ === 'class') return 'type';
     if (typeof value === 'object' && value?.__type__ === 'bound_method') return 'method';
     if (typeof value === 'object' && value?.__type__ === 'set') return 'set';
+    // ✅ Phase 19: range 타입 인식
+    if (typeof value === 'object' && value?.__type__ === 'range') return 'range';
     if (Array.isArray(value)) return 'list';
     if (typeof value === 'string') return 'str';
     if (typeof value === 'number') return Number.isInteger(value) ? 'int' : 'float';
