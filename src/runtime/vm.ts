@@ -631,6 +631,69 @@ export class VM {
         }
         break;
 
+      // ✅ Phase 19: 이터레이터 프로토콜
+      case Opcode.GET_ITER: {
+        const iterReg = aNum;
+        const objReg = bNum;
+        const obj = frame.registers[objReg];
+        try {
+          let iterator: any;
+          if (obj && typeof obj === 'object' && obj.__iter__) {
+            // __iter__() 메서드 호출
+            iterator = obj.__iter__();
+          } else if (Array.isArray(obj)) {
+            // 배열용 이터레이터
+            let index = 0;
+            iterator = {
+              __type__: 'array_iterator',
+              __next__(): any {
+                if (index >= obj.length) throw new Error('StopIteration');
+                return obj[index++];
+              },
+            };
+          } else if (typeof obj === 'string') {
+            // 문자열용 이터레이터
+            let index = 0;
+            iterator = {
+              __type__: 'string_iterator',
+              __next__(): string {
+                if (index >= obj.length) throw new Error('StopIteration');
+                return obj[index++];
+              },
+            };
+          } else {
+            throw new Error(`${obj} is not iterable`);
+          }
+          frame.registers[iterReg] = iterator;
+        } catch (e) {
+          throw new Error(`TypeError: ${e}`);
+        }
+        break;
+      }
+
+      case Opcode.FOR_ITER: {
+        const valueReg = aNum;
+        const iterReg = bNum;
+        const jumpOffset = cNum;
+        const iterator = frame.registers[iterReg];
+        try {
+          if (!iterator || !iterator.__next__) {
+            throw new Error('TypeError: iterator object has no __next__');
+          }
+          const value = iterator.__next__();
+          frame.registers[valueReg] = value;
+          // 다음 반복으로
+        } catch (e) {
+          if (e instanceof Error && e.message === 'StopIteration') {
+            // 반복 종료
+            frame.pc = jumpOffset;
+          } else {
+            throw e;
+          }
+        }
+        break;
+      }
+
       // 기타
       case Opcode.NOP:
         break;
@@ -1143,18 +1206,68 @@ export const NativeLibrary = {
     return 0;
   },
 
-  // 범위
-  range: (start: number, end?: number, step?: number): number[] => {
+  // 범위 (✅ Phase 19: 레이지 이터레이터로 변경)
+  range: (start: number, end?: number, step?: number): any => {
     if (end === undefined) {
       [end, start] = [start, 0];
     }
     if (step === undefined) step = 1;
 
-    const result: number[] = [];
-    for (let i = start; i < end; i += step) {
-      result.push(i);
+    return {
+      __type__: 'range',
+      start,
+      end,
+      step,
+      __iter__(): any {
+        return {
+          __type__: 'range_iterator',
+          current: start,
+          end,
+          step,
+          __next__(): number {
+            if (this.step > 0 && this.current >= this.end) {
+              throw new Error('StopIteration');
+            }
+            if (this.step < 0 && this.current <= this.end) {
+              throw new Error('StopIteration');
+            }
+            const value = this.current;
+            this.current += this.step;
+            return value;
+          },
+        };
+      },
+    };
+  },
+
+  // 이터레이터 구하기 (✅ Phase 19)
+  iter: (obj: any): any => {
+    // 이미 이터레이터면 반환
+    if (obj && obj.__type__ === 'range_iterator') return obj;
+    // range 객체면 __iter__ 호출
+    if (obj && obj.__iter__) return obj.__iter__();
+    // 배열/문자열은 배열 이터레이터 반환
+    if (Array.isArray(obj)) {
+      let index = 0;
+      return {
+        __type__: 'array_iterator',
+        __next__(): any {
+          if (index >= obj.length) throw new Error('StopIteration');
+          return obj[index++];
+        },
+      };
     }
-    return result;
+    if (typeof obj === 'string') {
+      let index = 0;
+      return {
+        __type__: 'string_iterator',
+        __next__(): string {
+          if (index >= obj.length) throw new Error('StopIteration');
+          return obj[index++];
+        },
+      };
+    }
+    throw new Error(`${obj} is not iterable`);
   },
 
   // 합

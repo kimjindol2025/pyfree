@@ -154,6 +154,10 @@ export enum Opcode {
   BREAK = 'BREAK',                // break 문
   CONTINUE = 'CONTINUE',          // continue 문
 
+  // ✅ Phase 19: 이터레이터 프로토콜
+  GET_ITER = 'GET_ITER',          // r[a] = iter(r[b])  → __iter__() 호출
+  FOR_ITER = 'FOR_ITER',          // r[a] = next(r[b]) → 종료면 goto offset / 그외 계속
+
   // 예외 처리
   SETUP_TRY = 'SETUP_TRY',        // try 설정: push handler
   POP_TRY = 'POP_TRY',            // try 해제: pop handler
@@ -851,90 +855,111 @@ export class IRCompiler {
   }
 
   /**
-   * For 루프 컴파일
+   * For 루프 컴파일 (✅ Phase 19: 이터레이터 프로토콜 사용)
    */
   private compileForLoop(stmt: any): void {
     const iterReg = this.compileExpression(stmt.iterable);
-    const targetName = stmt.target.type === 'Identifier' ? stmt.target.name : null;
 
-    if (!targetName) {
+    // ✅ Phase 19: Tuple 목표 또는 Identifier 목표 둘 다 지원
+    const targetElements: { name: string; oldSymbol: any }[] = [];
+
+    if (stmt.target.type === 'Tuple') {
+      // 튜플 언패킹: for idx, val in ...
+      for (const elem of stmt.target.elements) {
+        if (elem.type === 'Identifier') {
+          targetElements.push({
+            name: elem.name,
+            oldSymbol: this.lookupSymbol(elem.name),
+          });
+        }
+      }
+    } else if (stmt.target.type === 'Identifier') {
+      // 단순 목표: for x in ...
+      targetElements.push({
+        name: stmt.target.name,
+        oldSymbol: this.lookupSymbol(stmt.target.name),
+      });
+    }
+
+    if (targetElements.length === 0) {
       this.freeRegister(iterReg);
       return;
     }
 
-    // ✅ 런타임 FOR 루프 구현 (2026-03-09)
-    // 패턴: SETUP_LOOP → 인덱스초기화 → 길이계산 → 조건체크 → 요소추출 → 본문 → 인덱스증가 → JUMP → POP_LOOP
+    // ✅ 이터레이터 프로토콜 (Phase 19)
+    // 패턴: GET_ITER → SETUP_LOOP → FOR_ITER (반복 종료면 점프) → 본문 → JUMP → POP_LOOP
 
     // Step 1: 레지스터 할당
-    const idxReg = this.allocRegister();      // 루프 인덱스
-    const lenReg = this.allocRegister();      // iterable 길이
-    const lenFnReg = this.allocRegister();    // len 함수
-    const condReg = this.allocRegister();     // 조건 결과
-    const itemReg = this.allocRegister();     // 현재 요소
+    const iteratorReg = this.allocRegister();  // 이터레이터 객체
+    const itemReg = this.allocRegister();      // 현재 요소 (또는 튜플)
 
-    // Step 2: 인덱스 초기화 (idx = 0)
-    const zeroIdx = this.builder.addConstant(0);
-    this.builder.emit(Opcode.LOAD_CONST, [idxReg, zeroIdx]);
+    // Step 2: GET_ITER - 이터레이터 획득
+    this.builder.emit(Opcode.GET_ITER, [iteratorReg, iterReg]);
 
-    // Step 3: len 함수 로드 및 호출 (len = len(iterable))
-    this.builder.emit(Opcode.LOAD_GLOBAL, [lenFnReg, 'len']);
-    this.builder.emit(Opcode.CALL, [lenReg, lenFnReg, 1, iterReg]);
-
-    // Step 4: SETUP_LOOP (break/continue 지원)
+    // Step 3: SETUP_LOOP (break/continue 지원)
     this.builder.emit(Opcode.SETUP_LOOP, [0, 0]);
     const setupLoopIdx = this.builder.code.length - 1;
 
-    // Step 5: 조건 체크 레이블 (idx < len)
-    const condCheckOffset = this.builder.getCurrentOffset();
-    this.loopStack.push(condCheckOffset);
+    // Step 4: FOR_ITER 루프 시작
+    const loopStartOffset = this.builder.getCurrentOffset();
+    this.loopStack.push(loopStartOffset);
 
-    this.builder.emit(Opcode.LT, [condReg, idxReg, lenReg]);
-    const jumpIfFalseIdx = this.builder.getCurrentOffset();
-    this.builder.emit(Opcode.JUMP_IF_FALSE, [condReg, 0]);  // 종료 오프셋은 나중에 패치
+    const forIterIdx = this.builder.getCurrentOffset();
+    this.builder.emit(Opcode.FOR_ITER, [itemReg, iteratorReg, 0]);  // 종료 오프셋은 나중에 패치
 
-    // Step 6: 현재 요소 추출 및 루프 변수 저장
-    this.builder.emit(Opcode.INDEX_GET, [itemReg, iterReg, idxReg]);
-    this.builder.emit(Opcode.STORE_FAST, [targetName, itemReg]);
+    // Step 5: 루프 변수 저장 (튜플 언패킹 가능)
+    if (targetElements.length === 1) {
+      // 단순 할당
+      this.builder.emit(Opcode.STORE_FAST, [targetElements[0].name, itemReg]);
+      this.registerSymbol(targetElements[0].name, false, itemReg);
+    } else {
+      // 튜플 언패킹: INDEX_GET으로 각 요소 추출
+      const unpackRegs: number[] = [];
+      for (let i = 0; i < targetElements.length; i++) {
+        const reg = this.allocRegister();
+        const indexConst = this.builder.addConstant(i);
+        const indexReg = this.allocRegister();
+        this.builder.emit(Opcode.LOAD_CONST, [indexReg, indexConst]);
+        this.builder.emit(Opcode.INDEX_GET, [reg, itemReg, indexReg]);
+        this.freeRegister(indexReg);
+        unpackRegs.push(reg);
+      }
 
-    // 심볼 테이블에 등록 (루프 변수)
-    const oldSymbol = this.lookupSymbol(targetName);
-    this.registerSymbol(targetName, false, itemReg);
+      // 각 변수에 레지스터 할당
+      for (let i = 0; i < targetElements.length; i++) {
+        this.builder.emit(Opcode.STORE_FAST, [targetElements[i].name, unpackRegs[i]]);
+        this.registerSymbol(targetElements[i].name, false, unpackRegs[i]);
+        this.freeRegister(unpackRegs[i]);
+      }
+    }
 
-    // Step 7: 루프 본문 컴파일
+    // Step 6: 루프 본문 컴파일
     for (const s of stmt.body) {
       this.compileStatement(s);
     }
 
     // 심볼 복원
-    if (oldSymbol) {
-      this.symbols.set(targetName, oldSymbol);
-    } else {
-      this.symbols.delete(targetName);
+    for (const elem of targetElements) {
+      if (elem.oldSymbol) {
+        this.symbols.set(elem.name, elem.oldSymbol);
+      } else {
+        this.symbols.delete(elem.name);
+      }
     }
 
-    // Step 8: 인덱스 증가 (idx = idx + 1)
-    const oneIdx = this.builder.addConstant(1);
-    const oneReg = this.allocRegister();
-    this.builder.emit(Opcode.LOAD_CONST, [oneReg, oneIdx]);
-    this.builder.emit(Opcode.ADD, [idxReg, idxReg, oneReg]);
-    this.freeRegister(oneReg);
+    // Step 7: 루프 시작으로 점프
+    this.builder.emit(Opcode.JUMP, [loopStartOffset]);
 
-    // Step 9: 조건 체크로 점프
-    this.builder.emit(Opcode.JUMP, [condCheckOffset]);
-
-    // Step 10: 루프 종료 레이블 및 패치
+    // Step 8: 루프 종료 레이블 및 패치
     const loopEndOffset = this.builder.getCurrentOffset();
-    this.builder.code[jumpIfFalseIdx].args[1] = loopEndOffset;
+    this.builder.code[forIterIdx].args[2] = loopEndOffset;
     this.builder.code[setupLoopIdx].args[1] = loopEndOffset;
 
     this.builder.emit(Opcode.POP_LOOP, []);
 
     // 정리
     this.loopStack.pop();
-    this.freeRegister(idxReg);
-    this.freeRegister(lenReg);
-    this.freeRegister(lenFnReg);
-    this.freeRegister(condReg);
+    this.freeRegister(iteratorReg);
     this.freeRegister(itemReg);
     this.freeRegister(iterReg);
   }

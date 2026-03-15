@@ -432,13 +432,44 @@ export class PyFreeParser {
   }
 
   /**
-   * For 루프 파싱
+   * For 루프 대상 파싱 (✅ Phase 19)
+   * 'in' 연산자와 충돌하지 않도록 비교 연산자를 포함하지 않는 표현식 파싱
+   * 가능한 대상: x, x.y, x[i], (x, y), x, y, ...
+   */
+  private parseForTarget(): AST.Expression {
+    const startToken = this.peek();
+    let expr = this.parsePostfix();  // 변수, 속성, 인덱싱만 파싱 (비교연산 제외)
+
+    // 튜플 언패킹: x, y, z 또는 (x, y, z)
+    if (this.check(TokenType.COMMA)) {
+      const elements = [expr];
+      while (this.match(TokenType.COMMA)) {
+        if (this.check(TokenType.IN) || this.check(TokenType.COLON)) break;  // 'in' 또는 ':' 전에 중단
+        elements.push(this.parsePostfix());
+      }
+      if (elements.length > 1) {
+        return {
+          type: 'Tuple',
+          elements,
+          line: startToken.line,
+          column: startToken.column,
+        } as AST.Tuple;
+      }
+    }
+
+    return expr;
+  }
+
+  /**
+   * For 루프 파싱 (✅ Phase 19: 'in' 연산자와 충돌 해결)
    */
   private parseForLoop(): AST.ForLoop {
     const startToken = this.peek();
     this.consume(TokenType.FOR, 'for 키워드 필요');
 
-    const target = this.parseExpression();
+    // ✅ Phase 19: parseExpression() 대신 parseForTarget() 사용
+    // (parseExpression()은 'in'을 비교 연산자로 해석해서 "i in list"를 하나의 BinaryOp로 파싱)
+    const target = this.parseForTarget();
     this.consume(TokenType.IN, 'in 키워드 필요');
     const iterable = this.parseExpression();
 
