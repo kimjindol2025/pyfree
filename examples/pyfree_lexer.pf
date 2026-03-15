@@ -1,0 +1,141 @@
+# PyFree 자체로 구현한 간단한 Lexer
+# ✅ Phase 25: 자기 호스팅 증명 (Self-hosting proof)
+
+def is_digit(c):
+    """숫자 여부 확인"""
+    return c >= "0" and c <= "9"
+
+def is_alpha(c):
+    """문자 여부 확인"""
+    return (c >= "a" and c <= "z") or (c >= "A" and c <= "Z") or c == "_"
+
+def is_alnum(c):
+    """문자 또는 숫자 여부"""
+    return is_digit(c) or is_alpha(c)
+
+def is_whitespace(c):
+    """공백 여부"""
+    return c == " " or c == "\t" or c == "\n" or c == "\r"
+
+def tokenize_simple(source):
+    """
+    간단한 토큰화 (PyFree 자기 호스팅 증명용)
+    주요 토큰만 인식: 숫자, 식별자, 연산자, 키워드
+    """
+    tokens = []
+    i = 0
+
+    while i < len(source):
+        # 공백 건너뛰기
+        if is_whitespace(source[i]):
+            i = i + 1
+            continue
+
+        # 주석 처리
+        if source[i] == "#":
+            while i < len(source) and source[i] != "\n":
+                i = i + 1
+            continue
+
+        # 숫자 파싱
+        if is_digit(source[i]):
+            start = i
+            while i < len(source) and is_digit(source[i]):
+                i = i + 1
+            num_str = source[start:i]
+            tokens.append({"type": "NUMBER", "value": num_str})
+            continue
+
+        # 식별자/키워드 파싱
+        if is_alpha(source[i]):
+            start = i
+            while i < len(source) and is_alnum(source[i]):
+                i = i + 1
+            word = source[start:i]
+            # 키워드 확인
+            if word == "def":
+                tokens.append({"type": "DEF", "value": "def"})
+            elif word == "if":
+                tokens.append({"type": "IF", "value": "if"})
+            elif word == "while":
+                tokens.append({"type": "WHILE", "value": "while"})
+            elif word == "for":
+                tokens.append({"type": "FOR", "value": "for"})
+            elif word == "return":
+                tokens.append({"type": "RETURN", "value": "return"})
+            elif word == "True":
+                tokens.append({"type": "TRUE", "value": "True"})
+            elif word == "False":
+                tokens.append({"type": "FALSE", "value": "False"})
+            elif word == "None":
+                tokens.append({"type": "NONE", "value": "None"})
+            else:
+                tokens.append({"type": "IDENTIFIER", "value": word})
+            continue
+
+        # 연산자 및 구분자
+        c = source[i]
+        if c == "(":
+            tokens.append({"type": "LPAREN", "value": "("})
+            i = i + 1
+        elif c == ")":
+            tokens.append({"type": "RPAREN", "value": ")"})
+            i = i + 1
+        elif c == "[":
+            tokens.append({"type": "LBRACKET", "value": "["})
+            i = i + 1
+        elif c == "]":
+            tokens.append({"type": "RBRACKET", "value": "]"})
+            i = i + 1
+        elif c == "{":
+            tokens.append({"type": "LBRACE", "value": "{"})
+            i = i + 1
+        elif c == "}":
+            tokens.append({"type": "RBRACE", "value": "}"})
+            i = i + 1
+        elif c == ":":
+            tokens.append({"type": "COLON", "value": ":"})
+            i = i + 1
+        elif c == ",":
+            tokens.append({"type": "COMMA", "value": ","})
+            i = i + 1
+        elif c == ".":
+            tokens.append({"type": "DOT", "value": "."})
+            i = i + 1
+        elif c == "=":
+            if i + 1 < len(source) and source[i + 1] == "=":
+                tokens.append({"type": "EQ", "value": "=="})
+                i = i + 2
+            else:
+                tokens.append({"type": "ASSIGN", "value": "="})
+                i = i + 1
+        elif c == "+":
+            tokens.append({"type": "PLUS", "value": "+"})
+            i = i + 1
+        elif c == "-":
+            tokens.append({"type": "MINUS", "value": "-"})
+            i = i + 1
+        elif c == "*":
+            tokens.append({"type": "STAR", "value": "*"})
+            i = i + 1
+        elif c == "/":
+            tokens.append({"type": "SLASH", "value": "/"})
+            i = i + 1
+        elif c == "<":
+            tokens.append({"type": "LT", "value": "<"})
+            i = i + 1
+        elif c == ">":
+            tokens.append({"type": "GT", "value": ">"})
+            i = i + 1
+        else:
+            i = i + 1
+
+    return tokens
+
+# 테스트
+if __name__ == "__main__":
+    code = "def hello():\n    x = 42\n    return x"
+    tokens = tokenize_simple(code)
+
+    for token in tokens:
+        print(token["type"])
