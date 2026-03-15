@@ -541,6 +541,16 @@ export class IRCompiler {
       case 'DeleteStatement':
         this.compileDeleteStatement(stmt);
         break;
+
+      // ✅ Phase 20: Global/Nonlocal 선언
+      case 'GlobalStatement':
+        this.compileGlobalStatement(stmt);
+        break;
+
+      case 'NonlocalStatement':
+        this.compileNonlocalStatement(stmt);
+        break;
+
       case 'AssignmentStatement':
         this.compileAssignmentStatement(stmt);
         break;
@@ -1002,8 +1012,8 @@ export class IRCompiler {
   }
 
   /**
-   * Try 문장 컴파일
-   * SETUP_TRY [handlerOffset] → try body → JUMP [endOffset] → except body → POP_TRY
+   * Try 문장 컴파일 (✅ Phase 20: 다중 except 및 finally 지원)
+   * SETUP_TRY [handlerOffset] → try body → JUMP [endOffset] → except bodies → finally → POP_TRY
    */
   private compileTryStatement(stmt: any): void {
     // SETUP_TRY with placeholder handler offset
@@ -1015,28 +1025,111 @@ export class IRCompiler {
       this.compileStatement(s);
     }
 
-    // JUMP over except body (placeholder)
+    // JUMP over except/finally body (placeholder)
     const jumpOverIdx = this.builder.getCurrentOffset();
-    this.builder.emit(Opcode.JUMP, [0]); // placeholder
+    this.builder.emit(Opcode.JUMP, [0]); // placeholder to skip exception handling
 
     // Handler offset = current position (except body starts here)
     const handlerOffset = this.builder.getCurrentOffset();
     this.builder.code[setupTryIdx].args[0] = handlerOffset;
 
-    // except body
+    // ✅ Phase 20: 다중 except 핸들러 지원
     const handlers = stmt.handlers || [];
-    for (const handler of handlers) {
-      // If except has a variable (except Exception as e:), store the exception
-      if (handler.name) {
-        const errReg = this.allocRegister();
-        this.builder.emit(Opcode.LOAD_GLOBAL, [errReg, '__exception__']);
-        this.builder.emit(Opcode.STORE_FAST, [handler.name, errReg]);
-        this.freeRegister(errReg);
+    const jumpToFinallyOffsets: number[] = [];  // finally로 점프할 오프셋들
+
+    for (let i = 0; i < handlers.length; i++) {
+      const handler = handlers[i];
+
+      // except 타입이 지정되었으면, 예외 타입 체크
+      if (handler.type) {
+        // 현재 예외의 타입을 가져옴
+        const excTypeReg = this.allocRegister();
+        const excVarReg = this.allocRegister();
+        const typeNameReg = this.allocRegister();
+
+        // __exception__ 로드
+        this.builder.emit(Opcode.LOAD_GLOBAL, [excVarReg, '__exception__']);
+        // type() 함수 호출 (except TypeError 같은 경우 처리)
+        const typeFnReg = this.allocRegister();
+        this.builder.emit(Opcode.LOAD_GLOBAL, [typeFnReg, 'type']);
+        this.builder.emit(Opcode.CALL, [excTypeReg, typeFnReg, 1, excVarReg]);
+
+        // 예외 타입 이름 로드
+        const typeNameIdx = this.builder.addConstant(handler.type);
+        this.builder.emit(Opcode.LOAD_CONST, [typeNameReg, typeNameIdx]);
+
+        // 타입 비교
+        const typeEqReg = this.allocRegister();
+        this.builder.emit(Opcode.EQ, [typeEqReg, excTypeReg, typeNameReg]);
+
+        // 타입이 일치하지 않으면, 다음 핸들러로
+        const skipHandlerIdx = this.builder.getCurrentOffset();
+        this.builder.emit(Opcode.JUMP_IF_FALSE, [typeEqReg, 0]); // offset placeholder
+
+        this.freeRegister(excTypeReg);
+        this.freeRegister(excVarReg);
+        this.freeRegister(typeNameReg);
+        this.freeRegister(typeFnReg);
+        this.freeRegister(typeEqReg);
+
+        // 이 핸들러 실행 후, finally로 점프
+        const skipHandlerJumpIdx = skipHandlerIdx;
+        const currentHandlerStartIdx = this.builder.getCurrentOffset();
+
+        // If except has a variable (except Exception as e:), store the exception
+        if (handler.name) {
+          const errReg = this.allocRegister();
+          this.builder.emit(Opcode.LOAD_GLOBAL, [errReg, '__exception__']);
+          this.builder.emit(Opcode.STORE_FAST, [handler.name, errReg]);
+          this.freeRegister(errReg);
+        }
+
+        // 핸들러 본문
+        for (const s of handler.body) {
+          this.compileStatement(s);
+        }
+
+        // finally로 점프
+        const handlerJumpIdx = this.builder.getCurrentOffset();
+        this.builder.emit(Opcode.JUMP, [0]); // finally offset placeholder
+        jumpToFinallyOffsets.push(handlerJumpIdx);
+
+        // 타입이 일치하지 않으면 여기로
+        this.builder.code[skipHandlerJumpIdx].args[1] = this.builder.getCurrentOffset();
+      } else {
+        // 타입 지정 없음: catch-all (bare except)
+        if (handler.name) {
+          const errReg = this.allocRegister();
+          this.builder.emit(Opcode.LOAD_GLOBAL, [errReg, '__exception__']);
+          this.builder.emit(Opcode.STORE_FAST, [handler.name, errReg]);
+          this.freeRegister(errReg);
+        }
+
+        // 핸들러 본문
+        for (const s of handler.body) {
+          this.compileStatement(s);
+        }
+
+        // finally로 점프
+        const handlerJumpIdx = this.builder.getCurrentOffset();
+        this.builder.emit(Opcode.JUMP, [0]); // finally offset placeholder
+        jumpToFinallyOffsets.push(handlerJumpIdx);
       }
-      for (const s of handler.body) {
+    }
+
+    // ✅ Phase 20: finally 블록
+    const finallyOffset = this.builder.getCurrentOffset();
+
+    // 모든 핸들러가 finally로 점프하도록 오프셋 수정
+    for (const jumpIdx of jumpToFinallyOffsets) {
+      this.builder.code[jumpIdx].args[0] = finallyOffset;
+    }
+
+    // Finally 본문
+    if (stmt.finallyBody && stmt.finallyBody.length > 0) {
+      for (const s of stmt.finallyBody) {
         this.compileStatement(s);
       }
-      break; // only first handler for now
     }
 
     // End offset
@@ -1238,6 +1331,49 @@ export class IRCompiler {
         this.freeRegister(objReg);
       }
     }
+  }
+
+  /**
+   * Global 선언 컴파일 (✅ Phase 20)
+   * global x, y, z → 이 함수 내 x, y, z는 전역 변수로 취급
+   */
+  private compileGlobalStatement(stmt: any): void {
+    // 컴파일 타임에: 심볼 테이블에 'global' 플래그 설정
+    const names = stmt.names || [];
+    for (const name of names) {
+      // 글로벌 스코프로 표시
+      const globalIdx = this.builder.addGlobal(name);
+      this.registerSymbol(name, true, undefined, globalIdx);
+    }
+    // 런타임 코드 생성 없음 (선언식)
+  }
+
+  /**
+   * Nonlocal 선언 컴파일 (✅ Phase 20)
+   * nonlocal x, y, z → 이 블록 내 x, y, z는 enclosing scope에서 조회
+   */
+  private compileNonlocalStatement(stmt: any): void {
+    // 컴파일 타임에: 심볼 테이블에 'nonlocal' 플래그 설정
+    const names = stmt.names || [];
+    if (!this.currentFunction) {
+      // 글로벌 스코프에서 nonlocal은 오류
+      return;
+    }
+    for (const name of names) {
+      // 현재 심볼을 nonlocal로 표시 (LOAD_DEREF/STORE_DEREF 사용)
+      // 실제 구현에서는 스코프 체인을 따라 찾음
+      const symbol = this.lookupSymbol(name);
+      if (!symbol) {
+        // 새로운 nonlocal 심볼 생성
+        // 나중에 LOAD_DEREF로 찾을 것
+        if (this.currentFunction.freeVars) {
+          if (!this.currentFunction.freeVars.includes(name)) {
+            this.currentFunction.freeVars.push(name);
+          }
+        }
+      }
+    }
+    // 런타임 코드 생성 없음 (선언식)
   }
 
   /**

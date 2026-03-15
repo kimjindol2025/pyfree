@@ -25,6 +25,10 @@ export enum TokenType {
   PASS = 'PASS',            // pass
   DEL = 'DEL',              // del
 
+  // ✅ Phase 20: 변수 스코프
+  GLOBAL = 'GLOBAL',        // global
+  NONLOCAL = 'NONLOCAL',    // nonlocal
+
   ASYNC = 'ASYNC',          // async
   AWAIT = 'AWAIT',          // await
   YIELD = 'YIELD',          // yield
@@ -179,6 +183,8 @@ export const PYTHON_KEYWORDS = new Map<string, TokenType>([
   ['continue', TokenType.CONTINUE],
   ['pass', TokenType.PASS],
   ['del', TokenType.DEL],
+  ['global', TokenType.GLOBAL],
+  ['nonlocal', TokenType.NONLOCAL],
   ['async', TokenType.ASYNC],
   ['await', TokenType.AWAIT],
   ['yield', TokenType.YIELD],

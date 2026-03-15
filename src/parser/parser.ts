@@ -171,6 +171,15 @@ export class PyFreeParser {
       return this.parseDelStatement();
     }
 
+    // ✅ Phase 20: Global/Nonlocal
+    if (this.check(TokenType.GLOBAL)) {
+      return this.parseGlobalStatement();
+    }
+
+    if (this.check(TokenType.NONLOCAL)) {
+      return this.parseNonlocalStatement();
+    }
+
     // Import
     if (this.check(TokenType.IMPORT) || this.check(TokenType.FROM)) {
       return this.parseImportStatement();
@@ -690,6 +699,52 @@ export class PyFreeParser {
       line: startToken.line,
       column: startToken.column,
     };
+  }
+
+  /**
+   * Global 선언 파싱 (✅ Phase 20)
+   */
+  private parseGlobalStatement(): AST.Statement {
+    const startToken = this.peek();
+    this.consume(TokenType.GLOBAL, 'global 키워드 필요');
+
+    const names: string[] = [];
+    names.push(this.consume(TokenType.IDENTIFIER, '변수명 필요').value);
+
+    while (this.match(TokenType.COMMA)) {
+      if (this.check(TokenType.NEWLINE) || this.isAtEnd()) break;
+      names.push(this.consume(TokenType.IDENTIFIER, '변수명 필요').value);
+    }
+
+    return {
+      type: 'GlobalStatement',
+      names,
+      line: startToken.line,
+      column: startToken.column,
+    } as any;
+  }
+
+  /**
+   * Nonlocal 선언 파싱 (✅ Phase 20)
+   */
+  private parseNonlocalStatement(): AST.Statement {
+    const startToken = this.peek();
+    this.consume(TokenType.NONLOCAL, 'nonlocal 키워드 필요');
+
+    const names: string[] = [];
+    names.push(this.consume(TokenType.IDENTIFIER, '변수명 필요').value);
+
+    while (this.match(TokenType.COMMA)) {
+      if (this.check(TokenType.NEWLINE) || this.isAtEnd()) break;
+      names.push(this.consume(TokenType.IDENTIFIER, '변수명 필요').value);
+    }
+
+    return {
+      type: 'NonlocalStatement',
+      names,
+      line: startToken.line,
+      column: startToken.column,
+    } as any;
   }
 
   /**
