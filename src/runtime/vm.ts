@@ -402,6 +402,10 @@ export class VM {
         this.buildList(frame, aNum, bNum, instr.args);
         break;
 
+      case Opcode.BUILD_TUPLE:
+        this.buildTuple(frame, aNum, bNum, instr.args);
+        break;
+
       case Opcode.BUILD_DICT:
         this.buildDict(frame, aNum, bNum, instr.args);
         break;
@@ -964,6 +968,19 @@ export class VM {
       dict[key] = value;
     }
     frame.registers[dst] = dict;
+  }
+
+  /**
+   * 튜플 생성
+   */
+  private buildTuple(frame: Frame, dst: number, count: number, args: any[]): void {
+    const tuple: PyFreeValue[] = [];
+    // args = [dst, count, elem0_reg, elem1_reg, ...]
+    for (let i = 0; i < count; i++) {
+      const elemReg = args[2 + i];
+      tuple.push(frame.registers[elemReg]);
+    }
+    frame.registers[dst] = tuple;
   }
 
   /**

@@ -197,13 +197,18 @@ export class PyFreeParser {
     let target: AST.Expression | AST.Tuple = expr;
 
     // 콤마가 있으면 튜플 언패킹으로 처리
-    if (this.check(TokenType.COMMA) && (this.peekAhead(1)?.type === TokenType.ASSIGN || this.peekAhead(1)?.type === TokenType.NEWLINE)) {
-      // 튜플 언패킹 감지: a, b = ... 형태
+    if (this.check(TokenType.COMMA)) {
+      // 튜플 언패킹 감지: a, b = ... 또는 a, b, c (expression)
       const elements = [expr];
-      while (this.match(TokenType.COMMA)) {
-        // = 바로 앞이면 멈춤
-        if (this.check(TokenType.ASSIGN)) break;
-        if (this.check(TokenType.NEWLINE)) break;
+      while (this.check(TokenType.COMMA)) {
+        this.advance(); // COMMA 소비
+        // 할당 연산자 전에 멈춤
+        if (this.check(TokenType.ASSIGN) || this.isCompoundAssignment()) {
+          break;
+        }
+        if (this.check(TokenType.NEWLINE) || this.isAtEnd()) {
+          break;
+        }
         const element = this.parseConditional();
         if (element) elements.push(element);
       }
@@ -1293,9 +1298,26 @@ export class PyFreeParser {
       } as AST.Identifier;
     }
 
-    // 괄호
+    // 괄호 (튜플 포함)
     if (this.match(TokenType.LPAREN)) {
       const expr = this.parseExpression();
+
+      // 괄호 안에 쉼표가 있으면 튜플로 처리
+      if (this.check(TokenType.COMMA)) {
+        const elements = [expr];
+        while (this.match(TokenType.COMMA)) {
+          if (this.check(TokenType.RPAREN)) break;
+          elements.push(this.parseExpression());
+        }
+        this.consume(TokenType.RPAREN, ') 필요');
+        return {
+          type: 'Tuple',
+          elements,
+          line: expr.line,
+          column: expr.column,
+        } as AST.Tuple;
+      }
+
       this.consume(TokenType.RPAREN, ') 필요');
       return expr;
     }
